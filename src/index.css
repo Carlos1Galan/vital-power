@@ -116,7 +116,17 @@ time, .live-number, .live-panel li span:last-child { font-variant-numeric: tabul
 select, input, button { font: inherit; }
 select, input { min-height: 2.75rem; padding: 0.4rem 0.7rem; border: 1.5px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); max-width: 100%; transition: border-color var(--fast), box-shadow var(--fast); }
 select:hover, input:hover { border-color: var(--action); }
-.persona-switcher select { max-width: min(22rem, 78vw); font-size: var(--text-small); font-weight: 600; }
+.persona-current { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; width: min(21rem, 72vw); min-height: 2.75rem; padding: 0.4rem 0.7rem; border: 1.5px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); transition: border-color var(--fast); }
+.persona-current:hover { border-color: var(--action); }
+.persona-current:focus-within { outline: 3px solid var(--action); outline-offset: 3px; }
+.persona-current::after { content: ''; flex: none; width: 0.55rem; height: 0.55rem; margin-bottom: 0.25rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+.persona-window { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+.persona-name { display: inline-block; font-weight: 600; }
+/* Slides twice when the name appears, then rests. Pointing at it or focusing it with the keyboard slides it again for as long as you stay. */
+.persona-name.sliding { animation: persona-slide var(--slide-time) linear 2; }
+.persona-current:hover .persona-name.sliding, .persona-current:focus-within .persona-name.sliding { animation-iteration-count: infinite; }
+/* Invisible but real: clicks, keys and screen readers still reach the native select. */
+.persona-current select { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 
 button, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: 0.55rem 1.3rem; border: 2px solid var(--action); border-radius: var(--radius-small);
   background: var(--action); color: var(--on-action); font-weight: 700; text-decoration: none; cursor: pointer; transition: transform var(--fast) var(--ease-out), background var(--fast), box-shadow var(--fast); }
@@ -268,8 +278,11 @@ button.intake-link { border-color: transparent; text-decoration: underline; text
 ::view-transition-old(root) { z-index: 0; }
 ::view-transition-new(root) { z-index: 1; }
 
+/* Rest at the start, slide to the end, rest, slide back. */
+@keyframes persona-slide { 0%, 18% { transform: translateX(0); } 50%, 68% { transform: translateX(var(--slide)); } 100% { transform: translateX(0); } }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .persona-name { display: block; overflow: hidden; text-overflow: ellipsis; } /* no sliding: the full name is in the tooltip and the list */
 }

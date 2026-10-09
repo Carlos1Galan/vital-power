@@ -1,10 +1,13 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
 
 const THEME_REVEAL_MS = 650
+const MARQUEE_PX_PER_SECOND = 28 // slow enough to read while it moves
+const MARQUEE_MOVING_SHARE = 0.64 // persona-slide in index.css moves for 32% of the cycle each way and rests in between
+const personaLabel = (p: Persona) => `${p.name}${p.orgName ? ` · ${p.orgName}` : ''}${p.orgStatus === 'pending' ? ' (pendiente)' : ''}`
 type Status = InferResponseType<typeof api.public.status.$get>
 const groups: [Persona['personaType'], string][] = [
   ['caregiver', 'Cuidador/a'], ['facility-staff', 'Personal de hogar'], ['self-patient', 'Paciente'],
@@ -14,6 +17,21 @@ const groups: [Persona['personaType'], string][] = [
 export default function Header({ personas, user, onSwitch }: { personas: Persona[]; user: Persona | null; onSwitch: (userId: number) => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState(false)
+  // How far the current persona's name overflows its box; above zero it slides back and forth so all of it can be read.
+  const nameBox = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(0)
+  const current = user ? personaLabel(user) : 'Elegir persona…'
+  useLayoutEffect(() => {
+    const box = nameBox.current
+    if (!box) return
+    const measure = () => setOverflow(Math.max(0, box.scrollWidth - box.clientWidth))
+    measure()
+    void document.fonts?.ready.then(measure) // a late font changes the text width without resizing the box
+    const observer = new ResizeObserver(measure)
+    observer.observe(box)
+    return () => observer.disconnect()
+  }, [current])
+
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 
   // The new theme opens as a circle from the button. A colour fade would pass text and background through
@@ -85,14 +103,20 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
     <span className="demo-label">DEMO · sin autenticación real</span>
     <label className="persona-switcher">
       Ver como
+      {/* The native select stays the real control (keyboard, screen readers, the full list); it sits invisible over the sliding name. */}
+      <span className="persona-current" title={current}>
+        <span className="persona-window" ref={nameBox} aria-hidden="true">
+          <span className={overflow ? 'persona-name sliding' : 'persona-name'} style={{ '--slide': `-${overflow}px`, '--slide-time': `${Math.max(5, (overflow / MARQUEE_PX_PER_SECOND) * 2 / MARQUEE_MOVING_SHARE)}s` } as CSSProperties}>{current}</span>
+        </span>
       <select value={user?.id ?? ''} onChange={(e) => onSwitch(Number(e.target.value))}>
         {!user && <option value="" disabled>Elegir persona…</option>}
         {groups.map(([type, label]) => <optgroup key={type} label={label}>
           {personas.filter((p) => p.personaType === type).map((p) => <option key={p.id} value={p.id}>
-            {p.name}{p.orgName ? ` · ${p.orgName}` : ''}{p.orgStatus === 'pending' ? ' (pendiente)' : ''}
+            {personaLabel(p)}
           </option>)}
         </optgroup>)}
       </select>
+      </span>
     </label>
     <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
   </header>
