@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { db } from './db.ts'
+import { db, setting } from './db.ts'
+import { processTownsReading } from './events.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
 
 export const POLL_MS = 180_000 // LUMA's own client refresh interval; polling faster returns nothing fresher.
@@ -40,5 +41,7 @@ async function read(endpoint: 'regions' | 'towns', init: RequestInit, schema: z.
 export async function pollOnce(f: typeof fetch = fetch) {
   const regionsId = await read('regions', { method: 'GET' }, Regions, f)
   const townsId = await read('towns', { method: 'POST', body: JSON.stringify(MUNICIPALITIES) }, Towns, f)
+  // In replay the live feed is still recorded, but only the replayed readings drive events.
+  if (setting('mode') === 'live') processTownsReading(townsId)
   return { regionsId, townsId }
 }
