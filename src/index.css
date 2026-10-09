@@ -1,0 +1,40 @@
+:root {
+  --fg: #1d2421; --muted: #5b6661; --bg: #f7f8f6; --card: #fff; --line: #d8ddd9;
+  --accent: #00704f; --alert: #b3261e; --alert-bg: #fdecea; --warn: #8a5a00; --warn-bg: #fff4d6;
+  font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg);
+}
+body { margin: 0; }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+h2 { margin-top: 2rem; }
+
+.top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 16px; background: var(--card); border-bottom: 1px solid var(--line); font-size: 14px; }
+.top .brand { font-weight: 700; color: var(--accent); text-decoration: none; }
+.top .spacer { flex: 1; }
+.badge { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+.badge.live { background: #e3f3ec; color: var(--accent); }
+.badge.replay { background: var(--warn-bg); color: var(--warn); }
+.badge.stale { background: var(--alert-bg); color: var(--alert); }
+.badge.demo { background: var(--fg); color: var(--bg); }
+
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button.link { background: none; color: var(--accent); border-color: transparent; }
+button.mic.on { background: var(--alert); border-color: var(--alert); }
+input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
+textarea { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; }
+[role="alert"] { color: var(--alert); }
+
+.cards { list-style: none; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.card.alert { border-color: var(--alert); background: var(--alert-bg); }
+.card .status { font-weight: 600; margin-top: 4px; }
+
+.review { display: grid; gap: 10px; max-width: 560px; }
+.review label { display: block; }
+.review fieldset { border: 1px solid var(--line); border-radius: 6px; }
+.review blockquote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.note { background: var(--warn-bg); padding: 8px 12px; border-radius: 6px; }
+.consent { font-size: 14px; }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
