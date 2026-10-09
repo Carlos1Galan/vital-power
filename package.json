@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "api": "node --watch server/main.ts",
-    "start": "NODE_ENV=production node server/main.ts",
+    "api": "node --env-file-if-exists=.env --watch server/main.ts",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env server/main.ts",
     "build": "tsc && vite build",
     "test": "node --test"
   },
