@@ -4,7 +4,8 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { db, setting } from './db.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
-import { callList, coverageGaps, feedStatus, type Viewer } from './events.ts'
+import { callList, coverageGaps, feedStatus } from './events.ts'
+import { currentUser, requireRole } from './auth.ts'
 import { pollOnce, replayStep, setMode } from './luma.ts'
 
 // Every response carries { lastReadingAt, stale, mode }.
@@ -26,8 +27,7 @@ const OrgBody = z.object({
   message: z.string().trim().max(2000).default(''),
 })
 
-// ponytail: unguarded until B's auth.ts lands; then requireRole('admin') here and callList(currentUser(c)).
-const viewer: Viewer = { role: 'admin', orgId: null }
+const admin = requireRole('admin')
 
 // Owned by A: public status, organization registration, call list, admin.
 export const dataRoutes = new Hono()
@@ -56,34 +56,34 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ id, status: 'pending' as const }), 201)
   })
 
-  .get('/call-list', (c) => c.json(withFeed({ events: callList(viewer) })))
+  .get('/call-list', requireRole('coordinator', 'admin'), (c) => c.json(withFeed({ events: callList(currentUser(c)!) })))
 
-  .get('/admin/readings', (c) => {
+  .get('/admin/readings', admin, (c) => {
     const readings = db.prepare(`SELECT id, fetched_at, source, endpoint, http_status, ok, error, luma_timestamp, length(payload) AS bytes
       FROM luma_readings ORDER BY id DESC LIMIT 100`).all() as Reading[]
     return c.json(withFeed({ readings }))
   })
 
   // Live: poll LUMA now. Replay: advance one recorded reading (the presenter's "next").
-  .post('/admin/poll', async (c) => {
+  .post('/admin/poll', admin, async (c) => {
     const readingId = setting('mode') === 'replay' ? replayStep() : (await pollOnce()).townsId
     return c.json(withFeed({ readingId }))
   })
 
-  .put('/admin/mode', valid('json', z.object({ mode: z.enum(['live', 'replay']), fromReadingId: z.number().int().positive().optional() })), (c) => {
+  .put('/admin/mode', admin, valid('json', z.object({ mode: z.enum(['live', 'replay']), fromReadingId: z.number().int().positive().optional() })), (c) => {
     const { mode, fromReadingId } = c.req.valid('json')
     if (!setMode(mode, fromReadingId)) return c.json(withFeed({ error: 'No recorded towns reading with that id' }), 400)
     return c.json(withFeed({}))
   })
 
-  .get('/admin/organizations', (c) => {
+  .get('/admin/organizations', admin, (c) => {
     const rows = db.prepare(`SELECT o.id, o.name, o.org_type AS orgType, o.contact_email AS contactEmail, o.message, o.status, o.created_at AS createdAt,
         (SELECT json_group_array(municipality) FROM org_municipalities WHERE org_id = o.id) AS municipalities
       FROM organizations o WHERE o.kind = 'responder' ORDER BY o.status = 'pending' DESC, o.id`).all() as (Omit<Org, 'municipalities'> & { municipalities: string })[]
     return c.json(withFeed({ organizations: rows.map((o) => ({ ...o, municipalities: JSON.parse(o.municipalities) as string[] })) }))
   })
 
-  .post('/admin/organizations/:id/review', valid('param', z.object({ id: z.coerce.number().int() })), valid('json', z.object({ decision: z.enum(['approve', 'reject']) })), (c) => {
+  .post('/admin/organizations/:id/review', admin, valid('param', z.object({ id: z.coerce.number().int() })), valid('json', z.object({ decision: z.enum(['approve', 'reject']) })), (c) => {
     const { id } = c.req.valid('param')
     const status = c.req.valid('json').decision === 'approve' ? 'approved' : 'rejected'
     const changed = db.prepare(`UPDATE organizations SET status = ?, reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
@@ -92,7 +92,7 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ id, status }))
   })
 
-  .get('/admin/coverage-gaps', (c) => c.json(withFeed({ patients: coverageGaps() })))
+  .get('/admin/coverage-gaps', admin, (c) => c.json(withFeed({ patients: coverageGaps() })))
 
 type Region = { name: string; totalClients: number; totalClientsWithoutService: number }
 type Reading = { id: number; fetched_at: string; source: string; endpoint: string; http_status: number; ok: number; error: string | null; luma_timestamp: string | null; bytes: number | null }

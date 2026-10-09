@@ -2,11 +2,13 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { db } from './db.ts'
 import { app } from './app.ts'
+import { COOKIE } from './auth.ts'
 
-const call = async (method: string, path: string, body?: unknown) => {
+// Demo cookie = user id. Default is the seeded admin (1); null = no session.
+const call = async (method: string, path: string, body?: unknown, userId: number | null = 1) => {
   const res = await app.request(`/api${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(userId ? { Cookie: `${COOKIE}=${userId}` } : {}) },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   })
   return { status: res.status, json: (await res.json()) as any }
@@ -108,4 +110,19 @@ test('validation errors come back as a string, so the UI can show them', async (
   assert.equal(r.status, 400)
   assert.equal(typeof r.json.error, 'string')
   feedKeys(r.json)
+})
+
+test('call list and admin need a session and are scoped to the coordinator', async () => {
+  const id = towns({ CAGUAS: [{ zone: 'URB VILLA BLANCA', area: 'CAGUAS' }], 'SAN JUAN': [{ zone: 'HATO REY SUR', area: 'SAN JUAN' }] })
+  await call('PUT', '/admin/mode', { mode: 'replay', fromReadingId: id })
+  const seen = async (userId: number) => (await call('GET', '/call-list', undefined, userId)).json.events.map((e: any) => e.municipality).sort()
+
+  assert.equal((await call('GET', '/call-list', undefined, null)).status, 401)
+  assert.equal((await call('GET', '/call-list', undefined, 5)).status, 403) // caregiver
+  assert.equal((await call('GET', '/admin/readings', undefined, 2)).status, 403) // coordinator
+  assert.equal((await call('POST', '/admin/poll', undefined, null)).status, 401)
+  assert.deepEqual(await seen(1), ['CAGUAS', 'CAGUAS', 'SAN JUAN', 'SAN JUAN']) // admin: all
+  assert.deepEqual(await seen(2), ['CAGUAS', 'CAGUAS', 'SAN JUAN', 'SAN JUAN']) // org 1: CAGUAS + SAN JUAN
+  assert.deepEqual(await seen(3), ['CAGUAS', 'CAGUAS']) // org 2: CAGUAS only
+  assert.deepEqual(await seen(4), []) // org 3: pending
 })
