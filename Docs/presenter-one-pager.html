@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VitalPower Relay: presenter one-pager</title>
+<style>
+  /* One US Letter page. Open in a browser and print (Ctrl+P), or save as PDF. */
+  @page { size: letter; margin: 0.45in; }
+  :root { --ink: #14213d; --soft: #46505f; --teal: #0b6e69; --tint: #e3f2f0; --line: #d9d3c6; --warn: #9a3f06; --warn-tint: #fdf0dc; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 7.6in; padding: 0.2in 0; color: var(--ink); font: 9.4pt/1.32 'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+  h1 { margin: 0; font: 600 19pt/1.1 Georgia, 'Palatino Linotype', serif; }
+  h2 { margin: 0 0 3pt; font: 600 11.5pt/1.2 Georgia, 'Palatino Linotype', serif; color: var(--teal); }
+  p { margin: 0 0 4pt; }
+  ul { margin: 0; padding-left: 13pt; }
+  li { margin-bottom: 1.5pt; }
+  b { font-weight: 700; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12pt; padding-bottom: 5pt; border-bottom: 2pt solid var(--ink); }
+  header span { color: var(--soft); font-size: 9pt; white-space: nowrap; }
+  .pitch { margin: 6pt 0; padding: 5pt 9pt; background: var(--tint); border-left: 4pt solid var(--teal); font-size: 10.8pt; }
+  .grid { display: grid; gap: 7pt 12pt; }
+  .two { grid-template-columns: 1fr 1fr; }
+  .three { grid-template-columns: 1fr 1fr 1fr; }
+  section { break-inside: avoid; }
+  .box { padding: 5pt 7pt; border: 1pt solid var(--line); border-radius: 4pt; }
+  .box h2 { font-size: 10.5pt; }
+  .who { color: var(--soft); font-size: 8.8pt; margin-bottom: 2pt; }
+  .gap { margin-top: 6pt; }
+  .say { margin: 7pt 0 0; padding: 5pt 9pt; background: var(--warn-tint); border-left: 4pt solid var(--warn); font-weight: 700; }
+  dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3pt 12pt; }
+  dl div { break-inside: avoid; }
+  dt { font-weight: 700; }
+  dd { margin: 0; color: var(--soft); }
+  footer { margin-top: 7pt; padding-top: 4pt; border-top: 1pt solid var(--line); color: var(--soft); font-size: 8.8pt; }
+  @media print { body { padding: 0; max-width: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>VitalPower Relay</h1>
+  <span>Presenter one-pager · Caribbean AI Summit hackathon · 9 Oct 2026</span>
+</header>
+
+<p class="pitch"><b>In one sentence:</b> when the power goes out in Puerto Rico, we tell responder organizations which patients who depend on electricity to call first, and why.</p>
+
+<div class="grid two">
+  <section>
+    <h2>The problem</h2>
+    <ul>
+      <li>Some people need electricity to stay alive: oxygen machines, CPAP, ventilators, insulin that must stay cold.</li>
+      <li>Their batteries last <b>hours, not days</b>.</li>
+      <li><b>Nobody keeps a list of these patients.</b> When the power goes out, nobody knows who to call first.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>What we built</h2>
+    <ul>
+      <li>A <b>list of patients</b>, each one added with their permission.</li>
+      <li>A <b>watcher</b> that reads LUMA's public outage data every 3 minutes.</li>
+      <li>A <b>call list</b> that puts the most urgent patient at the top and says why.</li>
+    </ul>
+  </section>
+</div>
+
+<h2 class="gap">How it works, step by step</h2>
+<p>1. A caregiver registers a patient by talking or typing. &nbsp; 2. LUMA reports an outage in the patient's zone. &nbsp; 3. The patient or caregiver gets one question: <b>"¿Tiene luz en su casa?"</b> &nbsp; 4. The organization sees a ranked call list. &nbsp; 5. A coordinator takes the case, calls, and writes down what happened.</p>
+
+<h2 class="gap">Three views, one for each kind of user</h2>
+<div class="grid three">
+  <section class="box">
+    <h2>Patients and caregivers</h2>
+    <p class="who">Address: /app · Spanish</p>
+    <ul>
+      <li>Register by voice or text</li>
+      <li>Check the form, give consent, save</li>
+      <li>Answer the outage question with two big buttons or in their own words</li>
+      <li>See their patients and outage status</li>
+    </ul>
+  </section>
+  <section class="box">
+    <h2>Organizations</h2>
+    <p class="who">Address: /org · Spanish</p>
+    <ul>
+      <li>Ranked call list for their towns only</li>
+      <li>A reason next to every name</li>
+      <li>"Tomar caso": the first organization gets it</li>
+      <li>Read the reply, confirm, get a call script, record the result</li>
+    </ul>
+  </section>
+  <section class="box">
+    <h2>Admin (us)</h2>
+    <p class="who">Address: /admin · Spanish</p>
+    <ul>
+      <li>Log of every LUMA reading</li>
+      <li>Replay a recorded outage for demos</li>
+      <li>Approve new organizations</li>
+      <li>See patients no organization covers</li>
+    </ul>
+  </section>
+</div>
+
+<div class="grid two gap">
+  <section>
+    <h2>Who gets called first (fixed rules, no AI)</h2>
+    <ul>
+      <li><b>Call now:</b> no power confirmed and 4 hours of battery or less. Also: no answer after 15 minutes from someone on a ventilator, oxygen or CPAP.</li>
+      <li><b>Call soon:</b> no power confirmed and insulin in the fridge.</li>
+      <li><b>To confirm:</b> possible outage, nobody has confirmed yet.</li>
+      <li>The reason is shown next to every name, so the order can be trusted.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Where we use AI (Claude)</h2>
+    <ul>
+      <li><b>Fills the form</b> from what the caregiver says.</li>
+      <li><b>Reads the reply</b> to the outage question ("no power, 2 hours of battery").</li>
+      <li><b>Drafts the call script</b> for the coordinator.</li>
+      <li>A person checks every one before it is used. If the AI is down, people do the step by hand.</li>
+    </ul>
+  </section>
+</div>
+
+<p class="say">Say this: "The AI never decides who goes first. Fixed rules do, and a person confirms every step."</p>
+
+<h2 class="gap">If they ask</h2>
+<dl>
+  <div><dt>Is the data real?</dt><dd>The outage data is LUMA's real public feed. Every patient is made up.</dd></div>
+  <div><dt>What about privacy?</dt><dd>Patients give consent when they register. Each user only receives what they are allowed to see.</dd></div>
+  <div><dt>Is there a real login?</dt><dd>Not yet. The demo uses a "Ver como" switcher. Real login is the first thing we would add.</dd></div>
+  <div><dt>What if LUMA's data stops?</dt><dd>Every screen shows the time of the last reading and warns when it is old.</dd></div>
+  <div><dt>Two organizations, same patient?</dt><dd>The first one to take the case gets it. The other sees who has it.</dd></div>
+  <div><dt>How is this different from HHS emPOWER?</dt><dd>emPOWER counts Medicare patients by ZIP code. We tell you who to call first, for any patient who signs up.</dd></div>
+</dl>
+
+<footer><b>Demo day:</b> use Edge or Chrome (voice does not work in Brave) · present from Carlos's computer, which has the recorded outage for replay · the header button switches light and dark.</footer>
+</body>
+</html>
