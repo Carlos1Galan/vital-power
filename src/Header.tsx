@@ -3,6 +3,8 @@ import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
+import Select from 'react-select'
+import { selectStyles, type SelectOption } from './selectStyles.ts'
 
 const AREAS = [['/app', 'Pacientes y cuidadores'], ['/org', 'Organizaciones'], ['/admin', 'Administración']] as const
 const THEME_REVEAL_MS = 650
@@ -103,20 +105,23 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
     <span className="demo-label">DEMO · sin autenticación real</span>
     <label className="persona-switcher">
       Ver como
-      {/* The native select stays the real control (keyboard, screen readers, the full list); it sits invisible over the sliding name. */}
-      <span className="persona-current" title={current}>
-        <span className="persona-window" ref={nameBox} aria-hidden="true">
-          <span className={overflow ? 'persona-name sliding' : 'persona-name'} style={{ '--slide': `-${overflow}px`, '--slide-time': `${Math.max(5, (overflow / MARQUEE_PX_PER_SECOND) * 2 / MARQUEE_MOVING_SHARE)}s` } as CSSProperties}>{current}</span>
-        </span>
-      <select value={user?.id ?? ''} onChange={(e) => onSwitch(Number(e.target.value))}>
-        {!user && <option value="" disabled>Elegir persona…</option>}
-        {groups.map(([type, label]) => <optgroup key={type} label={label}>
-          {personas.filter((p) => p.personaType === type).map((p) => <option key={p.id} value={p.id}>
-            {personaLabel(p)}
-          </option>)}
-        </optgroup>)}
-      </select>
-      </span>
+      <Select<SelectOption, false>
+        aria-label="Ver como"
+        className="persona-select"
+        classNamePrefix="vp-select"
+        options={groups.map(([type, label]) => ({
+          label,
+          options: personas.filter((p) => p.personaType === type).map((p) => ({
+            value: String(p.id),
+            label: `${p.name}${p.orgName ? ` · ${p.orgName}` : ''}${p.orgStatus === 'pending' ? ' (pendiente)' : ''}`,
+          })),
+        })).filter((group) => group.options.length)}
+        value={user ? { value: String(user.id), label: `${user.name}${user.orgName ? ` · ${user.orgName}` : ''}${user.orgStatus === 'pending' ? ' (pendiente)' : ''}` } : null}
+        onChange={(option) => { if (option) onSwitch(Number(option.value)) }}
+        placeholder="Elegir persona…"
+        isSearchable
+        styles={selectStyles}
+      />
     </label>
     <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
   </header>
