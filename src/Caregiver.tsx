@@ -1,3 +1,4 @@
+import { useT, useServerText } from './i18n.ts'
 import { useCallback, useEffect, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
@@ -9,12 +10,14 @@ type Patient = InferResponseType<typeof api.patients.mine.$get, 200>['patients']
 type Checkin = InferResponseType<typeof api.checkins.pending.$get, 200>['checkins'][number]
 
 const STATUS = {
-  possible: ['warn', 'Posible apagón en su zona'],
-  confirmed: ['urgent', 'Sin luz, confirmado'],
-  none: ['ok', 'Sin apagón reportado'],
+  possible: ['warn', 'caregiver.possible'],
+  confirmed: ['urgent', 'caregiver.confirmed'],
+  none: ['ok', 'caregiver.none'],
 } as const
 
 export default function Caregiver({ user }: { user: Persona }) {
+  const t = useT()
+  const s = useServerText()
   const [patients, setPatients] = useState<Patient[] | null>(null)
   const [checkins, setCheckins] = useState<Checkin[]>([])
   const [error, setError] = useState('')
@@ -33,7 +36,7 @@ export default function Caregiver({ user }: { user: Persona }) {
       setCheckins((await c.json()).checkins)
       setError('')
     } catch {
-      setError('No se pudo cargar la información. Intente de nuevo en un momento.')
+      setError(t('caregiver.loadError'))
     }
   }, [])
 
@@ -50,7 +53,7 @@ export default function Caregiver({ user }: { user: Persona }) {
       if (res.ok) setSent(true)
       else setError(await errorText(res))
     } catch {
-      setError('No se pudo enviar la respuesta. Intente de nuevo.')
+      setError(t('caregiver.replyError'))
     }
     await load()
   }
@@ -62,29 +65,29 @@ export default function Caregiver({ user }: { user: Persona }) {
   }} />
 
   return <section>
-    <h1>Hola, {user.name}</h1>
-    {error && <p role="alert" className="connection-error">{error}</p>}
+    <h1>{t('caregiver.greeting', { name: s(user.name) })}</h1>
+    {error && <p role="alert" className="connection-error">{s(error)}</p>}
 
-    <h2 id="avisos">Avisos</h2>
+    <h2 id="avisos">{t('caregiver.alerts')}</h2>
     {checkins.map((c) => <CheckinCard key={c.id} checkin={c} onReply={reply} />)}
-    {!checkins.length && <p className="card empty" aria-live="polite">{sent ? 'Gracias. Su respuesta llegó al equipo de coordinación.' : 'No tiene avisos pendientes.'}</p>}
+    {!checkins.length && <p className="card empty" aria-live="polite">{sent ? t('caregiver.thanks') : t('caregiver.noAlerts')}</p>}
 
-    <h2>{isPatient ? 'Mi registro' : 'Mis pacientes'}</h2>
+    <h2>{isPatient ? t('caregiver.myRecord') : t('caregiver.myPatients')}</h2>
     {/* A patient who registered themself has nothing more to register here; caregivers and facility staff add people. */}
-    {!(isPatient && patients?.some((p) => p.isSelf)) && <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>{isPatient ? 'Registrarme' : 'Registrar a una persona'}</button></p>}
-    <p aria-live="polite">{saved ? 'Registro guardado.' : ''}</p>
-    {!patients ? !error && <p>Cargando…</p> : <ul className="patients">
+    {!(isPatient && patients?.some((p) => p.isSelf)) && <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>{isPatient ? t('caregiver.registerSelf') : t('caregiver.registerPerson')}</button></p>}
+    <p aria-live="polite">{saved ? t('caregiver.saved') : ''}</p>
+    {!patients ? !error && <p>{t('common.loading')}</p> : <ul className="patients">
       {patients.map((p) => {
         const [tone, label] = STATUS[p.outage ?? 'none']
         return <li key={p.id} className="card">
-          <h3>{p.name}</h3>
-          <p className={`status ${tone}`}>{label}</p>
+          <h3>{s(p.name)}</h3>
+          <p className={`status ${tone}`}>{t(label)}</p>
           <p className="muted">{p.municipality}{p.zone ? ` · ${p.zone}` : ''}</p>
-          <p>{p.needs.map(needText).join(' · ')}</p>
-          {p.claimedBy && <p className="case-taken">{p.claimedBy} tomó su caso.</p>}
+          <p>{p.needs.map((n) => needText(n, t)).join(' · ')}</p>
+          {p.claimedBy && <p className="case-taken">{t('caregiver.takenBy', { org: s(p.claimedBy) })}</p>}
           {p.lastCall && <p className="case-call">
-            <strong>{p.lastCall.reached ? 'Le llamaron' : 'Intentaron llamarle'} {ago(p.lastCall.createdAt)}.</strong> {p.lastCall.outcome}
-            {p.lastCall.nextAction ? ` Próximo paso: ${p.lastCall.nextAction}` : ''}
+            <strong>{t(p.lastCall.reached ? 'caregiver.called' : 'caregiver.attemptedCall', { time: ago(p.lastCall.createdAt, t) })}</strong> {p.lastCall.outcome}
+            {p.lastCall.nextAction ? t('caregiver.nextStep', { action: p.lastCall.nextAction }) : ''}
           </p>}
         </li>
       })}
@@ -94,6 +97,8 @@ export default function Caregiver({ user }: { user: Persona }) {
 
 // The demo's "patient phone": one question, two big answers, or their own words.
 function CheckinCard({ checkin, onReply }: { checkin: Checkin; onReply: (id: number, text: string) => Promise<void> }) {
+  const t = useT()
+  const s = useServerText()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const send = async (value: string) => {
@@ -103,17 +108,17 @@ function CheckinCard({ checkin, onReply }: { checkin: Checkin; onReply: (id: num
   }
 
   return <article className="card checkin">
-    <p className="muted">Para {checkin.patientName} · enviado {ago(checkin.sentAt)}</p>
-    <p className="question">{checkin.message}</p>
+    <p className="muted">{t('caregiver.sentFor', { name: s(checkin.patientName), time: ago(checkin.sentAt, t) })}</p>
+    <p className="question">{s(checkin.message)}</p>
     <p className="quick-replies">
-      <button disabled={busy} onClick={() => send('No, no hay luz')}>No, no hay luz</button>
-      <button className="quiet" disabled={busy} onClick={() => send('Sí, tenemos luz')}>Sí, tenemos luz</button>
+      <button disabled={busy} onClick={() => send(t('caregiver.noPower'))}>{t('caregiver.noPower')}</button>
+      <button className="quiet" disabled={busy} onClick={() => send(t('caregiver.hasPower'))}>{t('caregiver.hasPower')}</button>
     </p>
     <form onSubmit={(ev) => { ev.preventDefault(); void send(text) }}>
-      <label>O escriba lo que está pasando
-        <textarea rows={2} maxLength={1000} value={text} onChange={(ev) => setText(ev.target.value)} placeholder="Ejemplo: se fue la luz a las 3 y el concentrador tiene batería para dos horas" />
+      <label>{t('caregiver.writeReply')}
+        <textarea rows={2} maxLength={1000} value={text} onChange={(ev) => setText(ev.target.value)} placeholder={t('caregiver.replyExample')} />
       </label>
-      <button className="quiet" disabled={busy || !text.trim()}>Enviar respuesta</button>
+      <button className="quiet" disabled={busy || !text.trim()}>{t('caregiver.sendReply')}</button>
     </form>
   </article>
 }

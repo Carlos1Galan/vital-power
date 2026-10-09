@@ -1,7 +1,8 @@
+import { selectText, useT, useServerText, getLang, type TextKey } from './i18n.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
-import { errorText, MUNICIPALITIES, NEED_LABEL } from './lib.ts'
+import { errorText, MUNICIPALITIES, NEED_KEY } from './lib.ts'
 import Select from 'react-select'
 import { selectStyles, type SelectOption } from './selectStyles.ts'
 
@@ -25,16 +26,18 @@ const SpeechRecognition = (window as Window & {
   webkitSpeechRecognition?: new () => Recognition
 }).SpeechRecognition ?? (window as Window & { webkitSpeechRecognition?: new () => Recognition }).webkitSpeechRecognition
 // Plain reasons for the dictation errors a person can act on. "network" is what Brave reports: it blocks the speech service Chrome uses.
-const VOICE_ERROR: Record<string, string> = {
-  network: 'El dictado no funciona en este navegador. Abra la página en Chrome o Edge, o escriba aquí.',
-  'not-allowed': 'El navegador no tiene permiso para usar el micrófono. Puede escribir.',
-  'service-not-allowed': 'El navegador no tiene permiso para usar el micrófono. Puede escribir.',
-  'audio-capture': 'No encontramos un micrófono. Puede escribir.',
-  'no-speech': 'No escuchamos nada. Acérquese al micrófono e intente de nuevo.',
+const VOICE_ERROR: Record<string, TextKey> = {
+  network: 'intake.voiceNetwork',
+  'not-allowed': 'intake.voicePermission',
+  'service-not-allowed': 'intake.voicePermission',
+  'audio-capture': 'intake.noMicrophone',
+  'no-speech': 'intake.noSpeech',
 }
 const emptyNeed = (): NeedRow => ({ kind: '', batteryHours: '' })
 
 export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolean; onCancel: () => void; onSaved: () => Promise<void> }) {
+  const t = useT()
+  const s = useServerText()
   const [step, setStep] = useState(1)
   const [isSelf, setIsSelf] = useState(false)
   const [transcript, setTranscript] = useState('')
@@ -96,7 +99,7 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       } catch {
         if (active) {
           accept([])
-          setZoneError('No se pudieron cargar las zonas. Puede guardar sin zona.')
+          setZoneError(t('intake.zoneError'))
         }
       } finally { if (active) setZonesBusy(false) }
     })()
@@ -118,7 +121,7 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       }
       const current = new SpeechRecognition()
       recognition.current = current
-      current.lang = 'es-PR'
+      current.lang = getLang() === 'en' ? 'en-US' : 'es-PR'
       current.interimResults = true
       current.continuous = true
       current.onresult = (event) => {
@@ -130,11 +133,11 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
         setHearing(interim)
         if (final) setTranscript((text) => `${text}${final}`.trim().slice(0, 4000))
       }
-      current.onerror = (event) => { setListening(false); setHearing(''); setVoiceError(VOICE_ERROR[event.error] ?? 'No se pudo usar el micrófono. Puede escribir.') }
+      current.onerror = (event) => { setListening(false); setHearing(''); setVoiceError(t(VOICE_ERROR[event.error] ?? 'intake.voiceError')) }
       current.onend = () => { setListening(false); setHearing('') }
       current.start()
       setListening(true)
-    } catch { setListening(false); setVoiceError('No se pudo usar el micrófono. Puede escribir.') }
+    } catch { setListening(false); setVoiceError(t('intake.voiceError')) }
   }
   const clearForm = () => {
     initialZones.current = null
@@ -170,7 +173,7 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       setNeeds(p.needs.length ? p.needs.map((n) => ({ kind: n.kind, batteryHours: n.batteryHours === null ? '' : String(n.batteryHours) })) : [emptyNeed()])
     } catch {
       clearForm()
-      setError('No pudimos leerlo automáticamente. Llene los datos a mano.')
+      setError(t('intake.readError'))
     } finally {
       setConsent(false)
       setReviewedTranscript(transcript)
@@ -191,39 +194,40 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       } } })
       if (!res.ok) setError(await errorText(res))
       else await onSaved()
-    } catch { setError('No se pudo guardar el registro. Intente de nuevo.') }
+    } catch { setError(t('intake.saveError')) }
     finally { setBusy(false) }
   }
 
   return <section className="card intake">
-    <p className="muted" aria-live="polite">Paso {step} de 3</p>
-    <h1 className="question">{step === 1 ? '¿Para quién es este registro?' : step === 2 ? 'Cuéntenos' : 'Revise antes de guardar'}</h1>
-    {error && <p role="alert" className="connection-error">{error}</p>}
+    <p className="muted" aria-live="polite">{t('intake.step', { step })}</p>
+    <h1 className="question">{step === 1 ? t('intake.who') : step === 2 ? t('intake.tellUs') : t('intake.review')}</h1>
+    {error && <p role="alert" className="connection-error">{s(error)}</p>}
     {step === 1 && <div className="quick-replies">
-      {!hasSelf && <button onClick={() => { setIsSelf(true); setStep(2) }}>Para mí</button>}
-      <button onClick={() => { setIsSelf(false); setStep(2) }}>Para otra persona</button>
+      {!hasSelf && <button onClick={() => { setIsSelf(true); setStep(2) }}>{t('intake.forMe')}</button>}
+      <button onClick={() => { setIsSelf(false); setStep(2) }}>{t('intake.forOther')}</button>
     </div>}
     {step === 2 && <div className="intake-fields">
-      <label>Diga o escriba quién es, dónde vive y qué equipo o medicamento depende de la luz.
-        <textarea rows={6} maxLength={4000} disabled={busy} value={transcript} onChange={(ev) => setTranscript(ev.target.value)} placeholder="Ejemplo: mi papá, Don Ramón, vive en Caguas, usa un concentrador de oxígeno con batería para dos horas y tiene insulina en la nevera." />
+      <label>{t('intake.story')}
+        <textarea rows={6} maxLength={4000} disabled={busy} value={transcript} onChange={(ev) => setTranscript(ev.target.value)} placeholder={t('intake.storyExample')} />
       </label>
-      {SpeechRecognition && <button className="quiet" disabled={busy} onClick={speak}>{listening ? 'Detener' : 'Hablar'}</button>}
-      <p className="muted" aria-live="polite">{listening ? `Escuchando… ${hearing}` : ''}</p>
-      {voiceError && <p role="alert" className="connection-error">{voiceError}</p>}
-      <button disabled={busy || transcript.trim().length < 3} onClick={extract}>{busy ? 'Leyendo lo que nos contó…' : 'Continuar'}</button>
+      {SpeechRecognition && <button className="quiet" disabled={busy} onClick={speak}>{listening ? t('intake.stop') : t('intake.speak')}</button>}
+      <p className="muted" aria-live="polite">{listening ? t('intake.listening', { hearing }) : ''}</p>
+      {voiceError && <p role="alert" className="connection-error">{s(voiceError)}</p>}
+      <button disabled={busy || transcript.trim().length < 3} onClick={extract}>{busy ? t('intake.reading') : t('intake.continue')}</button>
       <button className="quiet intake-link" disabled={busy} onClick={() => {
         stop()
         if (automatic || reviewedTranscript === null) clearForm()
         setError('')
         setReviewedTranscript(transcript)
         setStep(3)
-      }}>Prefiero llenar los datos a mano</button>
+      }}>{t('intake.manual')}</button>
     </div>}
     {step === 3 && <form className="intake-fields" onSubmit={(ev) => { ev.preventDefault(); void save() }}>
-      {automatic && <p className="muted">Esto lo llenamos automáticamente con lo que nos contó. Corrija lo que esté mal.</p>}
-      <label>Nombre o cómo le llamamos<input required maxLength={80} value={name} onChange={(ev) => setName(ev.target.value)} /></label>
-      <label>Teléfono<input maxLength={30} inputMode="tel" value={phone} onChange={(ev) => setPhone(ev.target.value)} /></label>
-      <label htmlFor="intake-municipality">Municipio<Select<SelectOption, false>
+      {automatic && <p className="muted">{t('intake.automatic')}</p>}
+      <label>{t('intake.name')}<input required maxLength={80} value={name} onChange={(ev) => setName(ev.target.value)} /></label>
+      <label>{t('intake.phone')}<input maxLength={30} inputMode="tel" value={phone} onChange={(ev) => setPhone(ev.target.value)} /></label>
+      <label htmlFor="intake-municipality">{t('intake.municipality')}<Select<SelectOption, false>
+        {...selectText(t)}
         inputId="intake-municipality"
         classNamePrefix="vp-select"
         required
@@ -234,8 +238,9 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
           setZones([])
           setZonesBusy(!!option)
           setMunicipality((option?.value ?? '') as Municipality | '')
-      }} placeholder="Elija un municipio" isSearchable styles={selectStyles} /></label>
-      <label htmlFor="intake-zone">Zona o barrio<Select<SelectOption, false>
+      }} placeholder={t('intake.chooseMunicipality')} isSearchable styles={selectStyles} /></label>
+      <label htmlFor="intake-zone">{t('intake.zone')}<Select<SelectOption, false>
+        {...selectText(t)}
         inputId="intake-zone"
         classNamePrefix="vp-select"
         options={zones.map((z) => ({ value: z, label: z }))}
@@ -243,36 +248,37 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
         isDisabled={zonesBusy}
         isLoading={zonesBusy}
         onChange={(option) => setZone(option?.value ?? '')}
-        placeholder="No aparece o no sé"
+        placeholder={t('intake.unknownZone')}
         isClearable
         isSearchable
         styles={selectStyles}
       /></label>
-      {zonesBusy ? <p className="muted" aria-live="polite">Cargando zonas…</p> : municipality && !zones.length && <p className="muted">Todavía no tenemos zonas para este municipio. Puede guardar sin zona.</p>}
-      {zoneError && <p role="alert" className="connection-error">{zoneError}</p>}
-      <h2 className="question">Equipo o medicamento que depende de la luz</h2>
+      {zonesBusy ? <p className="muted" aria-live="polite">{t('intake.loadingZones')}</p> : municipality && !zones.length && <p className="muted">{t('intake.noZones')}</p>}
+      {zoneError && <p role="alert" className="connection-error">{s(zoneError)}</p>}
+      <h2 className="question">{t('intake.needs')}</h2>
       {needs.map((n, i) => <div className="need-row" key={i}>
-        <label htmlFor={`intake-need-${i}`}>Equipo o medicamento {i + 1}<Select<SelectOption, false>
+        <label htmlFor={`intake-need-${i}`}>{t('intake.needNumber', { number: i + 1 })}<Select<SelectOption, false>
+        {...selectText(t)}
           inputId={`intake-need-${i}`}
           classNamePrefix="vp-select"
           required
-          options={Object.entries(NEED_LABEL).map(([kind, label]) => ({ value: kind, label }))}
-          value={n.kind ? { value: n.kind, label: NEED_LABEL[n.kind] } : null}
+          options={Object.entries(NEED_KEY).map(([kind, label]) => ({ value: kind, label: t(label) }))}
+          value={n.kind ? { value: n.kind, label: t(NEED_KEY[n.kind]) } : null}
           onChange={(option) => setNeeds(needs.map((row, index) => index === i ? { ...row, kind: (option?.value ?? '') as Kind | '' } : row))}
-          placeholder="Elija uno"
+          placeholder={t('intake.chooseNeed')}
           isSearchable
           styles={selectStyles}
         /></label>
-        <label>Horas de batería (si tiene)<input type="number" min={0} max={240} step={0.5} value={n.batteryHours} onChange={(ev) => setNeeds(needs.map((row, index) => index === i ? { ...row, batteryHours: ev.target.value } : row))} /></label>
-        <button type="button" className="quiet" disabled={needs.length === 1} onClick={() => setNeeds(needs.filter((_, index) => index !== i))}>Quitar</button>
+        <label>{t('intake.battery')}<input type="number" min={0} max={240} step={0.5} value={n.batteryHours} onChange={(ev) => setNeeds(needs.map((row, index) => index === i ? { ...row, batteryHours: ev.target.value } : row))} /></label>
+        <button type="button" className="quiet" disabled={needs.length === 1} onClick={() => setNeeds(needs.filter((_, index) => index !== i))}>{t('intake.remove')}</button>
       </div>)}
-      <button type="button" className="quiet" disabled={needs.length >= 6} onClick={() => setNeeds([...needs, emptyNeed()])}>Añadir otro</button>
-      <label className="check"><input type="checkbox" required checked={consent} onChange={(ev) => setConsent(ev.target.checked)} />Autorizo a que una organización de respuesta me llame si hay un apagón en mi zona. Estos datos son de demostración.</label>
-      <button disabled={busy || zonesBusy || !consent || !valid}>{busy ? 'Guardando…' : 'Guardar registro'}</button>
+      <button type="button" className="quiet" disabled={needs.length >= 6} onClick={() => setNeeds([...needs, emptyNeed()])}>{t('intake.add')}</button>
+      <label className="check"><input type="checkbox" required checked={consent} onChange={(ev) => setConsent(ev.target.checked)} />{t('intake.consent')}</label>
+      <button disabled={busy || zonesBusy || !consent || !valid}>{busy ? t('intake.saving') : t('intake.save')}</button>
     </form>}
     <div className="quick-replies">
-      {step > 1 && <button className="quiet" disabled={busy} onClick={() => { stop(); setStep(step - 1) }}>Volver</button>}
-      <button className="quiet" disabled={busy} onClick={onCancel}>Cancelar</button>
+      {step > 1 && <button className="quiet" disabled={busy} onClick={() => { stop(); setStep(step - 1) }}>{t('intake.back')}</button>}
+      <button className="quiet" disabled={busy} onClick={onCancel}>{t('common.cancel')}</button>
     </div>
   </section>
 }

@@ -1,3 +1,4 @@
+import { useT, useServerText, getLang, useLang } from './i18n.ts'
 import { useCallback, useEffect, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
@@ -7,9 +8,11 @@ import { ago, errorText, needText } from './lib.ts'
 type CallEvent = InferResponseType<typeof api['call-list']['$get']>['events'][number]
 type Detail = InferResponseType<typeof api.events[':id']['$get'], 200>
 
-const TIER_LABEL = { 1: 'Llamar ahora', 2: 'Llamar pronto', 3: 'Por confirmar' } as const
+const TIER_KEY = { 1: 'calls.tier1', 2: 'calls.tier2', 3: 'calls.tier3' } as const
 
 export default function CallList({ user }: { user: Persona }) {
+  const t = useT()
+  const s = useServerText()
   const [events, setEvents] = useState<CallEvent[] | null>(null)
   const [openId, setOpenId] = useState<number | null>(null)
 
@@ -29,7 +32,7 @@ export default function CallList({ user }: { user: Persona }) {
       if (!res.ok) return setError(await errorText(res))
       setEvents((await res.json()).events)
     } catch {
-      setError('No se pudo cargar la lista. ¿Está corriendo el servidor?')
+      setError(t('calls.loadError'))
     }
   }, [])
 
@@ -49,36 +52,36 @@ export default function CallList({ user }: { user: Persona }) {
       ok = res.ok
       if (!ok) setError(await errorText(res))
     } catch {
-      setError('No se pudo completar la acción.')
+      setError(t('calls.actionError'))
     }
     await load()
     setBusy(false)
     return ok
   }
 
-  if (!events) return error ? <p role="alert" className="connection-error">{error}</p> : <p>Cargando la lista…</p>
+  if (!events) return error ? <p role="alert" className="connection-error">{s(error)}</p> : <p>{t('calls.loading')}</p>
 
   return <>
-    {error && <p role="alert" className="connection-error">{error}</p>}
-    {!events.length && <p className="card empty">No hay apagones que afecten a pacientes registrados en este momento.</p>}
+    {error && <p role="alert" className="connection-error">{s(error)}</p>}
+    {!events.length && <p className="card empty">{t('calls.empty')}</p>}
     <ol className="call-list">
       {events.map((e, i) => {
         const mine = e.claimedByOrgId !== null && e.claimedByOrgId === user.orgId
         return <li key={e.eventId} id={`caso-${e.eventId}`} className={`call tier-${e.tier}`} style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}>
-          <div className="call-rank"><strong>{i + 1}</strong><span>{e.tier === 3 && e.status === 'confirmed' ? 'Sin luz confirmada' : TIER_LABEL[e.tier]}</span></div>
+          <div className="call-rank"><strong>{i + 1}</strong><span>{e.tier === 3 && e.status === 'confirmed' ? t('calls.confirmed') : t(TIER_KEY[e.tier])}</span></div>
           <div className="call-body">
-            <h2>{e.patientName}</h2>
-            <p className="call-place">{e.municipality} · {e.zone} · apagón detectado {ago(e.openedAt)}</p>
-            <ul className="call-reasons">{e.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            <p className="call-needs">{e.needs.map(needText).join(' · ')}</p>
-            <p className="call-checkin">{e.checkinReplyAt ? `Contestó el aviso ${ago(e.checkinReplyAt)}` : e.checkinSentAt ? `Aviso enviado ${ago(e.checkinSentAt)}, sin respuesta` : 'Sin aviso enviado'}</p>
+            <h2>{s(e.patientName)}</h2>
+            <p className="call-place">{t('calls.place', { municipality: e.municipality, zone: e.zone ?? '', time: ago(e.openedAt, t) })}</p>
+            <ul className="call-reasons">{e.reasons.map((r) => <li key={r}>{s(r)}</li>)}</ul>
+            <p className="call-needs">{e.needs.map((n) => needText(n, t)).join(' · ')}</p>
+            <p className="call-checkin">{e.checkinReplyAt ? t('calls.replied', { time: ago(e.checkinReplyAt, t) }) : e.checkinSentAt ? t('calls.sent', { time: ago(e.checkinSentAt, t) }) : t('calls.noCheckin')}</p>
           </div>
           <div className="call-actions">
             {e.claimedBy
-              ? <p className={mine ? 'claimed mine' : 'claimed'}>{mine ? 'Caso de su organización' : `Atendido por ${e.claimedBy}`}</p>
-              : user.role === 'coordinator' && <button disabled={busy} onClick={() => act(() => api.events[':id'].claim.$post({ param: { id: String(e.eventId) } }))}>Tomar caso</button>}
+              ? <p className={mine ? 'claimed mine' : 'claimed'}>{mine ? t('calls.ownCase') : t('case.takenBy', { org: s(e.claimedBy) })}</p>
+              : user.role === 'coordinator' && <button disabled={busy} onClick={() => act(() => api.events[':id'].claim.$post({ param: { id: String(e.eventId) } }))}>{t('calls.claim')}</button>}
             <button className="quiet" aria-expanded={openId === e.eventId} onClick={() => setOpenId(openId === e.eventId ? null : e.eventId)}>
-              {openId === e.eventId ? 'Cerrar' : 'Ver caso'}
+              {openId === e.eventId ? t('common.close') : t('common.viewCase')}
             </button>
           </div>
           {openId === e.eventId && <EventDetail key={`${e.eventId}-${e.status}-${e.checkinReplyAt}-${e.claimedByOrgId}`} id={e.eventId} user={user} busy={busy} act={act} />}
@@ -89,6 +92,9 @@ export default function CallList({ user }: { user: Persona }) {
 }
 
 function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy: boolean; act: (request: () => Promise<Response>) => Promise<boolean> }) {
+  const t = useT()
+  const s = useServerText()
+  const lang = useLang()
   const [detail, setDetail] = useState<Detail | null>(null)
   const [error, setError] = useState('')
   const [reached, setReached] = useState(true)
@@ -101,7 +107,7 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
       if (res.ok) setDetail(await res.json())
       else setError(await errorText(res))
     } catch {
-      setError('No se pudo cargar el caso.')
+      setError(t('case.loadError'))
     }
   }, [id])
   useEffect(() => { void load() }, [load])
@@ -114,39 +120,39 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
     return () => clearTimeout(timer)
   }, [awaitingReading, detail, load])
 
-  if (error) return <p role="alert" className="call-detail connection-error">{error}</p>
-  if (!detail) return <p className="call-detail">Cargando el caso…</p>
+  if (error) return <p role="alert" className="call-detail connection-error">{s(error)}</p>
+  if (!detail) return <p className="call-detail">{t('case.loading')}</p>
   const { event, checkin, outcomes } = detail
   const canConfirm = user.role === 'coordinator' && checkin?.replyText && (event.status === 'possible' || event.status === 'confirmed')
   const confirm = (hasPower: boolean) => act(() => api.checkins[':id'].confirm.$post({ param: { id: String(checkin!.id) }, json: { hasPower } }))
 
   return <div className="call-detail">
     <section>
-      <h3>Respuesta al aviso</h3>
+      <h3>{t('case.reply')}</h3>
       {checkin ? <>
-        <p className="question">{checkin.message}</p>
+        <p className="question">{s(checkin.message)}</p>
         {checkin.replyText
-          ? <blockquote>{checkin.replyText}<footer>Texto original · {ago(checkin.replyAt!)}</footer></blockquote>
-          : <p className="muted">Todavía no han contestado.</p>}
+          ? <blockquote>{checkin.replyText}<footer>{t('case.original', { time: ago(checkin.replyAt!, t) })}</footer></blockquote>
+          : <p className="muted">{t('case.noReply')}</p>}
         {checkin.aiParsed ? <div className="automatic-reading">
-          <p>Lectura automática: {({ no: 'dice que NO tiene luz', yes: 'dice que SÍ tiene luz', unclear: 'no queda claro si tiene luz' })[checkin.aiParsed.hasPower]}{checkin.aiParsed.batteryHours !== null && ` · batería: ${checkin.aiParsed.batteryHours} h`}</p>
-          <p>{checkin.aiParsed.summary}</p>
-          <p className="muted">Es una lectura automática. Confirme usted con el texto original.</p>
-        </div> : checkin.replyText && <p className="muted">Lectura automática no disponible. Lea la respuesta original.</p>}
-        {checkin.confirmedAt && <p className="muted">Confirmado por un coordinador {ago(checkin.confirmedAt)}.</p>}
+          <p>{t('case.reading', { power: ({ no: t('case.noPower'), yes: t('case.hasPower'), unclear: t('case.unclearPower') })[checkin.aiParsed.hasPower], battery: checkin.aiParsed.batteryHours !== null ? t('case.battery', { hours: checkin.aiParsed.batteryHours }) : '' })}</p>
+          <p>{lang === 'en' ? checkin.aiParsed.summaryEn ?? checkin.aiParsed.summary : checkin.aiParsed.summary}</p>
+          <p className="muted">{t('case.readingNote')}</p>
+        </div> : checkin.replyText && <p className="muted">{t('case.noReading')}</p>}
+        {checkin.confirmedAt && <p className="muted">{t('case.confirmedAt', { time: ago(checkin.confirmedAt, t) })}</p>}
         {canConfirm && <p className="confirm-actions">
-          <button disabled={busy} onClick={() => confirm(false)}>Confirmar: no tiene luz</button>
-          <button className="quiet" disabled={busy} onClick={() => confirm(true)}>Sí tiene luz</button>
+          <button disabled={busy} onClick={() => confirm(false)}>{t('case.confirmNoPower')}</button>
+          <button className="quiet" disabled={busy} onClick={() => confirm(true)}>{t('case.confirmPower')}</button>
         </p>}
-      </> : <p className="muted">Este caso no tiene aviso.</p>}
+      </> : <p className="muted">{t('case.noCheckin')}</p>}
     </section>
 
     <section>
-      <h3>Llamada</h3>
-      <p>Teléfono: <strong>{event.phone ?? 'no registrado'}</strong></p>
+      <h3>{t('case.call')}</h3>
+      <p>{t('case.phone')} <strong>{event.phone ?? t('case.noPhone')}</strong></p>
       {outcomes.map((o) => <p key={o.id} className="outcome">
-        <strong>{o.reached ? 'Contactado' : 'No contestó'}</strong> · {o.outcome}{o.nextAction ? ` · Próximo paso: ${o.nextAction}` : ''}
-        <span className="muted"> ({o.coordinator}, {ago(o.createdAt)})</span>
+        <strong>{o.reached ? t('case.reached') : t('case.notReached')}</strong> · {o.outcome}{o.nextAction ? t('case.nextStep', { action: o.nextAction }) : ''}
+        <span className="muted"> ({s(o.coordinator)}, {ago(o.createdAt, t)})</span>
       </p>)}
       {event.mine
         ? <form className="outcome-form" onSubmit={async (ev) => {
@@ -157,18 +163,20 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
             setNextAction('')
             await load()
           }}>
-            <label className="check"><input type="checkbox" checked={reached} onChange={(ev) => setReached(ev.target.checked)} /> Logré hablar con la persona</label>
-            <label>¿Qué pasó en la llamada?<input required maxLength={500} value={outcome} onChange={(ev) => setOutcome(ev.target.value)} /></label>
-            <label>Próximo paso (opcional)<input maxLength={500} value={nextAction} onChange={(ev) => setNextAction(ev.target.value)} /></label>
-            <button disabled={busy || !outcome.trim()}>Guardar resultado</button>
+            <label className="check"><input type="checkbox" checked={reached} onChange={(ev) => setReached(ev.target.checked)} /> {t('case.spoke')}</label>
+            <label>{t('case.outcome')}<input required maxLength={500} value={outcome} onChange={(ev) => setOutcome(ev.target.value)} /></label>
+            <label>{t('case.nextAction')}<input maxLength={500} value={nextAction} onChange={(ev) => setNextAction(ev.target.value)} /></label>
+            <button disabled={busy || !outcome.trim()}>{t('case.save')}</button>
           </form>
-        : <p className="muted">{event.claimedBy ? `Solo ${event.claimedBy} puede registrar el resultado.` : 'Tome el caso para registrar el resultado de la llamada.'}</p>}
+        : <p className="muted">{event.claimedBy ? t('case.onlyOrg', { org: s(event.claimedBy) }) : t('case.claimFirst')}</p>}
     </section>
     <BriefingSection event={event} initial={detail.briefing} reload={load} />
   </div>
 }
 
 function BriefingSection({ event, initial, reload }: { event: Detail['event']; initial: Detail['briefing']; reload: () => Promise<void> }) {
+  const t = useT()
+  const s = useServerText()
   const [briefing, setBriefing] = useState(initial)
   const [text, setText] = useState(initial?.approvedText ?? initial?.draftText ?? '')
   const [busy, setBusy] = useState<'draft' | 'approve' | null>(null)
@@ -187,14 +195,14 @@ function BriefingSection({ event, initial, reload }: { event: Detail['event']; i
     setBusy('draft')
     setError('')
     try {
-      const res = await api.events[':id'].briefing.$post({ param: { id: String(event.id) }, json: {} })
+      const res = await api.events[':id'].briefing.$post({ param: { id: String(event.id) }, json: { lang: getLang() } })
       if (!res.ok) { setError(await errorText(res)); setByHand(true) }
       else {
         const data: InferResponseType<typeof api.events[':id']['briefing']['$post'], 201> = await res.json()
         setBriefing({ id: data.id, draftText: data.draftText, approvedText: null, approvedAt: null })
         setText(data.draftText)
       }
-    } catch { setError('No se pudo redactar el resumen. Puede escribirlo a mano.'); setByHand(true) }
+    } catch { setError(t('briefing.draftError')); setByHand(true) }
     finally { setBusy(null) }
   }
   const approve = async () => {
@@ -210,24 +218,24 @@ function BriefingSection({ event, initial, reload }: { event: Detail['event']; i
       const res = await api.briefings[':id'].approve.$post({ param: { id: String(id) }, json: { text } })
       if (!res.ok) setError(await errorText(res))
       else { setByHand(false); await reload() }
-    } catch { setError('No se pudo aprobar el resumen. Intente de nuevo.') }
+    } catch { setError(t('briefing.approveError')) }
     finally { setBusy(null) }
   }
 
   return <section className="outcome-form briefing">
-    <h3>Resumen para la llamada</h3>
-    {error && <p role="alert" className="connection-error">{error}</p>}
+    <h3>{t('briefing.title')}</h3>
+    {error && <p role="alert" className="connection-error">{s(error)}</p>}
     {event.mine ? <>
       {(briefing || byHand) && <>
-        <label>Resumen<textarea rows={10} maxLength={4000} value={text} disabled={busy !== null} onChange={(ev) => setText(ev.target.value)} /></label>
-        <p className="muted">{briefing ? 'Borrador automático. Revíselo y corríjalo antes de aprobar.' : 'Escriba el resumen y lo que va a preguntar en la llamada.'}</p>
-        <button disabled={busy !== null || !text.trim() || text.length > 4000} onClick={approve}>{busy === 'approve' ? 'Aprobando…' : 'Aprobar resumen'}</button>
-        <p className="muted" aria-live="polite">{briefing?.approvedAt ? `Aprobado ${ago(briefing.approvedAt)}.` : ''}</p>
+        <label>{t('briefing.summary')}<textarea rows={10} maxLength={4000} value={text} disabled={busy !== null} onChange={(ev) => setText(ev.target.value)} /></label>
+        <p className="muted">{briefing ? t('briefing.review') : t('briefing.manualNote')}</p>
+        <button disabled={busy !== null || !text.trim() || text.length > 4000} onClick={approve}>{busy === 'approve' ? t('briefing.approving') : t('briefing.approve')}</button>
+        <p className="muted" aria-live="polite">{briefing?.approvedAt ? t('briefing.approvedAt', { time: ago(briefing.approvedAt, t) }) : ''}</p>
       </>}
-      <button className={briefing ? 'quiet' : undefined} disabled={busy !== null} onClick={draft}>{busy === 'draft' ? 'Redactando…' : briefing ? 'Redactar de nuevo' : 'Redactar resumen'}</button>
-      {!briefing && !byHand && <button className="quiet" disabled={busy !== null} onClick={() => setByHand(true)}>Escribirlo a mano</button>}
+      <button className={briefing ? 'quiet' : undefined} disabled={busy !== null} onClick={draft}>{busy === 'draft' ? t('briefing.drafting') : briefing ? t('briefing.redraft') : t('briefing.draft')}</button>
+      {!briefing && !byHand && <button className="quiet" disabled={busy !== null} onClick={() => setByHand(true)}>{t('briefing.manual')}</button>}
     </> : <>
-      <p className="muted">{event.claimedBy ? `Solo ${event.claimedBy} puede redactar el resumen.` : 'Tome el caso para redactar el resumen de la llamada.'}</p>
+      <p className="muted">{event.claimedBy ? t('briefing.onlyOrg', { org: s(event.claimedBy) }) : t('briefing.claimFirst')}</p>
       {briefing?.approvedAt && <p className="briefing-text">{briefing.approvedText}</p>}
     </>}
   </section>

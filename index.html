@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,6 +11,7 @@
     <meta name="theme-color" content="#14213d" />
     <script>
       // Set the theme before first paint: the saved choice, else the device setting.
+      try { document.documentElement.lang = localStorage.getItem('vp_lang') === 'es' ? 'es' : 'en' } catch (e) { /* storage blocked: use English */ }
       var saved = null
       try { saved = localStorage.getItem('vp_theme') } catch (e) { /* storage blocked: follow the device */ }
       document.documentElement.dataset.theme = saved === 'dark' || saved === 'light' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'

@@ -1,24 +1,28 @@
+import { translate, getLang, type TextKey, type Translator } from './i18n.ts'
 // Small helpers shared by B's screens.
 
-export const NEED_LABEL: Record<string, string> = {
-  oxygen: 'Oxígeno', cpap: 'CPAP', ventilator: 'Ventilador', dialysis: 'Diálisis', insulin: 'Insulina', other: 'Otro equipo',
+export const NEED_KEY: Record<string, TextKey> = {
+  oxygen: 'need.oxygen', cpap: 'need.cpap', ventilator: 'need.ventilator', dialysis: 'need.dialysis', insulin: 'need.insulin', other: 'need.other',
 }
 
 export type Need = { kind: string; batteryHours: number | null }
-export const needText = (n: Need) => `${NEED_LABEL[n.kind] ?? n.kind}${n.batteryHours === null ? '' : ` · batería ${n.batteryHours} h`}`
+export const needText = (n: Need, t: Translator) => {
+  const need = NEED_KEY[n.kind] ? t(NEED_KEY[n.kind]) : n.kind
+  return n.batteryHours === null ? need : t('need.withBattery', { need, hours: n.batteryHours })
+}
 
 // Every API error comes back as { error: string }; fall back to the status code.
 export async function errorText(res: Response) {
   const body = (await res.json().catch(() => ({}))) as { error?: unknown }
-  return typeof body.error === 'string' ? body.error : `Error ${res.status}`
+  return typeof body.error === 'string' ? body.error : translate(getLang(), 'common.errorStatus', { status: res.status })
 }
 
-export function ago(iso: string, now = Date.now()) {
+export function ago(iso: string, t: Translator, now = Date.now()) {
   const min = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))
-  if (min < 1) return 'ahora mismo'
-  if (min < 60) return `hace ${min} min`
+  if (min < 1) return t('time.now')
+  if (min < 60) return t('time.minutes', { minutes: min })
   const h = Math.floor(min / 60)
-  return h < 24 ? `hace ${h} h ${min % 60} min` : `hace ${Math.floor(h / 24)} d`
+  return h < 24 ? t('time.hours', { hours: h, minutes: min % 60 }) : t('time.days', { days: Math.floor(h / 24) })
 }
 
 // Mirrors server/municipalities.ts.

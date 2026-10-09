@@ -1,3 +1,4 @@
+import { useT, useServerText, type Translator, type ServerText } from './i18n.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from './api.ts'
@@ -20,12 +21,12 @@ const MAX_SYSTEM = 3 // system notifications per batch
 const LEAVE_MS = 260
 const STORE = 'vp_alerts'
 
-const list = (names: string[]) => names.length > 3 ? `${names.slice(0, 3).join(', ')} y ${names.length - 3} más` : names.join(', ')
+const list = (names: string[], t: Translator, s: ServerText) => names.length > 3 ? t('alerts.moreNames', { names: names.slice(0, 3).map(s).join(', '), count: names.length - 3 }) : names.map(s).join(', ')
 // Newest first, but an informative card never pushes an urgent one off the screen.
 const trim = (all: Alert[]) => all.length <= MAX_SHOWN ? all : [...all.filter((a) => a.tone === 'urgent'), ...all.filter((a) => a.tone !== 'urgent')].slice(0, MAX_SHOWN)
 
 // What each role watches. read() returns null when the request fails, so one bad poll never looks like "everything disappeared".
-const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot | null>; diff: (before: Snapshot | null, now: Snapshot) => Draft[] }> = {
+const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot | null>; diff: (before: Snapshot | null, now: Snapshot, t: Translator, s: ServerText) => Draft[] }> = {
   coordinator: {
     read: async (user) => {
       const res = await api['call-list'].$get()
@@ -33,23 +34,23 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       return new Map((await res.json()).events.map((e) => [String(e.eventId), { name: e.patientName, tier: e.tier, reason: e.reasons[0], replied: !!e.checkinReplyAt,
         takenByOther: e.claimedByOrgId !== null && e.claimedByOrgId !== user.orgId }]))
     },
-    diff: (before, now) => {
+    diff: (before, now, t, s) => {
       if (!before) { // first look as this persona: one summary instead of a pile of cards
         const urgent = [...now].filter(([, c]) => c.tier === 1 && !c.takenByOther)
         if (!urgent.length) return []
         const [id, first] = urgent[0]
-        return [{ tone: 'urgent', title: urgent.length === 1 ? `Llamar ahora: ${first.name}` : `${urgent.length} personas para llamar ahora`,
-          body: urgent.length === 1 ? first.reason ?? '' : list(urgent.map(([, c]) => c.name)), href: `/org#caso-${id}`, action: 'Ver caso' }]
+        return [{ tone: 'urgent', title: urgent.length === 1 ? t('alerts.callNow', { name: s(first.name) }) : t('alerts.callCount', { count: urgent.length }),
+          body: urgent.length === 1 ? s(first.reason) : list(urgent.map(([, c]) => c.name), t, s), href: `/org#caso-${id}`, action: t('common.viewCase') }]
       }
       const out: Draft[] = []
       for (const [id, c] of now) {
         const was = before.get(id)
-        const open = { href: `/org#caso-${id}`, action: 'Ver caso' }
+        const open = { href: `/org#caso-${id}`, action: t('common.viewCase') }
         const mustCall = c.tier === 1 && !c.takenByOther
-        if (!was) out.push(mustCall ? { tone: 'urgent', title: `Llamar ahora: ${c.name}`, body: c.reason ?? '', ...open } : { tone: 'info', title: `Nuevo caso: ${c.name}`, body: c.reason ?? '', ...open })
+        if (!was) out.push(mustCall ? { tone: 'urgent', title: t('alerts.callNow', { name: s(c.name) }), body: s(c.reason), ...open } : { tone: 'info', title: t('alerts.newCase', { name: s(c.name) }), body: s(c.reason), ...open })
         else {
-          if (mustCall && was.tier !== 1) out.push({ tone: 'urgent', title: `Ahora es urgente: ${c.name}`, body: c.reason ?? '', ...open })
-          if (c.replied && !was.replied) out.push({ tone: 'info', title: `${c.name} contestó el aviso`, body: 'Abra el caso para leer la respuesta.', ...open })
+          if (mustCall && was.tier !== 1) out.push({ tone: 'urgent', title: t('alerts.urgent', { name: s(c.name) }), body: s(c.reason), ...open })
+          if (c.replied && !was.replied) out.push({ tone: 'info', title: t('alerts.replied', { name: s(c.name) }), body: t('alerts.openReply'), ...open })
         }
       }
       return out
@@ -61,10 +62,10 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       if (!res.ok) return null
       return new Map((await res.json()).checkins.map((c) => [String(c.id), { name: c.patientName, reason: c.message }]))
     },
-    diff: (before, now) => {
+    diff: (before, now, t, s) => {
       const fresh = [...now].filter(([id]) => !before?.has(id)).map(([, c]) => c)
       if (!fresh.length) return []
-      return [{ tone: 'urgent', title: fresh[0].reason ?? 'Tiene un aviso', body: `Aviso para ${list(fresh.map((c) => c.name))}. Conteste en esta pantalla.`, href: '/app#avisos', action: 'Contestar' }]
+      return [{ tone: 'urgent', title: fresh[0].reason !== undefined ? s(fresh[0].reason) : t('alerts.hasAlert'), body: t('alerts.forNames', { names: list(fresh.map((c) => c.name), t, s) }), href: '/app#avisos', action: t('alerts.reply') }]
     },
   },
   admin: {
@@ -73,10 +74,10 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       if (!res.ok) return null
       return new Map((await res.json()).organizations.filter((o) => o.status === 'pending').map((o) => [String(o.id), { name: o.name }]))
     },
-    diff: (before, now) => {
+    diff: (before, now, t, s) => {
       const fresh = [...now].filter(([id]) => !before?.has(id)).map(([, o]) => o.name)
       if (!fresh.length) return []
-      return [{ tone: 'info', title: fresh.length === 1 ? 'Una organización espera revisión' : `${fresh.length} organizaciones esperan revisión`, body: list(fresh), href: '/admin', action: 'Revisar' }]
+      return [{ tone: 'info', title: fresh.length === 1 ? t('alerts.onePending') : t('alerts.pendingCount', { count: fresh.length }), body: list(fresh, t, s), href: '/admin', action: t('alerts.review') }]
     },
   },
 }
@@ -104,6 +105,8 @@ const canNotify = () => 'Notification' in window
 const stored = () => { try { return localStorage.getItem(STORE) === 'on' } catch { return false } }
 
 export default function Alerts({ user }: { user: Persona | null }) {
+  const t = useT()
+  const s = useServerText()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [enabled, setEnabled] = useState(stored) // the person asked for sound and system notifications
   const [unseen, setUnseen] = useState(0)
@@ -158,7 +161,7 @@ export default function Alerts({ user }: { user: Persona | null }) {
       const now = await WATCH[who.role].read(who).catch(() => null)
       busy = false
       if (!active || !now) return
-      show(WATCH[who.role].diff(before, now))
+      show(WATCH[who.role].diff(before, now, t, s))
       before = now
     }
     void tick()
@@ -189,7 +192,7 @@ export default function Alerts({ user }: { user: Persona | null }) {
     let blocked = !canNotify()
     if (canNotify() && Notification.permission !== 'granted') blocked = (await Notification.requestPermission().catch(() => 'denied')) !== 'granted'
     chime()
-    show([{ tone: 'info', title: 'Avisos activados', body: blocked ? 'El navegador no permite notificaciones del sistema. Verá y oirá los avisos dentro de esta página.' : 'Le avisaremos con sonido y con una notificación cuando haya algo urgente.' }])
+    show([{ tone: 'info', title: t('alerts.enabled'), body: blocked ? t('alerts.blocked') : t('alerts.enabledNote') }])
   }
 
   const follow = (a: Alert) => {
@@ -201,9 +204,9 @@ export default function Alerts({ user }: { user: Persona | null }) {
   return <>
     <button className={enabled ? 'alerts-toggle on' : 'alerts-toggle'} aria-pressed={enabled} onClick={toggle}>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v3.6L4.3 16a1 1 0 0 0 .9 1.5h13.6a1 1 0 0 0 .9-1.5L18 12.6V9a6 6 0 0 0-6-6Zm-2.2 16a2.3 2.3 0 0 0 4.4 0Z" fill="currentColor" /></svg>
-      {enabled ? 'Avisos activos' : 'Activar avisos'}
+      {enabled ? t('alerts.active') : t('alerts.enable')}
     </button>
-    {createPortal(<div className="alerts" aria-label="Avisos">
+    {createPortal(<div className="alerts" aria-label={t('alerts.title')}>
       {alerts.map((a) => <article key={a.id} className={`alert-card ${a.tone}${a.leaving ? ' leaving' : ''}`} role={a.tone === 'urgent' ? 'alert' : 'status'}
         onMouseEnter={() => held.current.add(a.id)} onMouseLeave={() => held.current.delete(a.id)} onFocus={() => held.current.add(a.id)} onBlur={() => held.current.delete(a.id)}>
         <span className="alert-icon" aria-hidden="true" />
@@ -212,7 +215,7 @@ export default function Alerts({ user }: { user: Persona | null }) {
           {a.body && <p>{a.body}</p>}
           {a.href && <a className="button" href={a.href} onClick={() => follow(a)}>{a.action}</a>}
         </div>
-        <button className="alert-close" aria-label="Cerrar aviso" onClick={() => dismiss(a.id)}>×</button>
+        <button className="alert-close" aria-label={t('alerts.close')} onClick={() => dismiss(a.id)}>{t('alerts.closeSymbol')}</button>
         {a.tone === 'info' && <span className="alert-timer" style={{ animationDuration: `${INFO_MS}ms` }} aria-hidden="true" />}
       </article>)}
     </div>, document.body)}

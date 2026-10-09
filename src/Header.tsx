@@ -1,3 +1,4 @@
+import { selectText, useT, useServerText, useLang, setLang, type TextKey, type Translator, type ServerText } from './i18n.ts'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
@@ -7,11 +8,14 @@ import Alerts from './Alerts.tsx'
 import Select, { components, type SingleValueProps } from 'react-select'
 import { selectStyles, type SelectOption } from './selectStyles.ts'
 
-const AREAS = [['/app', 'Pacientes y cuidadores'], ['/org', 'Organizaciones'], ['/admin', 'Administración']] as const
+const AREAS = [['/app', 'header.patients'], ['/org', 'header.organizations'], ['/admin', 'header.admin']] as const
 const THEME_REVEAL_MS = 650
 const MARQUEE_PX_PER_SECOND = 28 // slow enough to read while it moves
 const MARQUEE_MOVING_SHARE = 0.64 // persona-slide in index.css moves for 32% of the cycle each way and rests in between
-const personaLabel = (p: Persona) => `${p.name}${p.orgName ? ` · ${p.orgName}` : ''}${p.orgStatus === 'pending' ? ' (pendiente)' : ''}`
+const personaLabel = (p: Persona, t: Translator, s: ServerText) => {
+  const name = p.orgName ? t('header.personaOrg', { name: s(p.name), org: s(p.orgName) }) : s(p.name)
+  return p.orgStatus === 'pending' ? t('header.personaPending', { name }) : name
+}
 // The chosen persona inside the searchable select. When the name is wider than the control it slides to its end
 // and back so all of it can be read (twice, then again on hover or focus; see persona-slide in index.css).
 function SlidingValue(props: SingleValueProps<SelectOption, false>) {
@@ -37,12 +41,15 @@ function SlidingValue(props: SingleValueProps<SelectOption, false>) {
 }
 
 type Status = InferResponseType<typeof api.public.status.$get>
-const groups: [Persona['personaType'], string][] = [
-  ['caregiver', 'Cuidador/a'], ['facility-staff', 'Personal de hogar'], ['self-patient', 'Paciente'],
-  ['coordinator', 'Coordinación'], ['admin', 'Administración'],
+const groups: [Persona['personaType'], TextKey][] = [
+  ['caregiver', 'header.caregiver'], ['facility-staff', 'header.staff'], ['self-patient', 'header.patient'],
+  ['coordinator', 'header.coordination'], ['admin', 'header.admin'],
 ]
 
 export default function Header({ personas, user, onSwitch }: { personas: Persona[]; user: Persona | null; onSwitch: (userId: number) => void }) {
+  const t = useT()
+  const s = useServerText()
+  const lang = useLang()
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState(false)
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
@@ -97,44 +104,46 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
 
   return <header className="site-header">
     <div className="header-navigation">
-      <a className="brand" href="/" aria-label="VitalPower, inicio">
+      <a className="brand" href="/" aria-label={t('header.home')}>
         <img className="on-light" src="/vitalpower-logo-horizontal.svg" alt="" width={176} height={60} />
         <img className="on-dark" src="/vitalpower-logo-horizontal-light.svg" alt="" width={176} height={60} />
       </a>
-      <nav aria-label="Áreas">
-        {AREAS.map(([href, label]) => <a key={href} href={href} aria-current={location.pathname === href ? 'page' : undefined}>{label}</a>)}
+      <nav aria-label={t('header.areas')}>
+        {AREAS.map(([href, label]) => <a key={href} href={href} aria-current={location.pathname === href ? 'page' : undefined}>{t(label)}</a>)}
       </nav>
     </div>
     <div className="feed-status" aria-live="polite">
-      {error ? <span className="warning">No se pudo actualizar la información</span> : status ? <>
-        <span className={`badge ${status.mode === 'replay' ? 'replay' : 'live'}`}>{status.mode === 'replay' ? 'Replay' : 'En vivo'}</span>
-        <span className="reading-time">{status.lastReadingAt ? <>Última lectura: <time dateTime={status.lastReadingAt}>{new Date(status.lastReadingAt).toLocaleTimeString('es-PR', { hour: 'numeric', minute: '2-digit' })}</time></> : 'Sin lecturas'}</span>
-        {status.stale && <span className="badge stale">Datos desactualizados</span>}
-      </> : <span>Cargando…</span>}
+      {error ? <span className="warning">{t('header.refreshError')}</span> : status ? <>
+        <span className={`badge ${status.mode === 'replay' ? 'replay' : 'live'}`}>{status.mode === 'replay' ? t('header.replay') : t('header.live')}</span>
+        <span className="reading-time">{status.lastReadingAt ? <>{t('header.lastReading')} <time dateTime={status.lastReadingAt}>{new Date(status.lastReadingAt).toLocaleTimeString(lang === 'en' ? 'en-US' : 'es-PR', { hour: 'numeric', minute: '2-digit' })}</time></> : t('header.noReadings')}</span>
+        {status.stale && <span className="badge stale">{t('header.stale')}</span>}
+      </> : <span>{t('common.loading')}</span>}
     </div>
-    <span className="demo-label">DEMO · sin autenticación real</span>
+    <span className="demo-label">{t('header.demo')}</span>
     <label className="persona-switcher">
-      Ver como
+      {t('header.viewAs')}
       <Select<SelectOption, false>
-        aria-label="Ver como"
+        {...selectText(t)}
+        aria-label={t('header.viewAs')}
         className="persona-select"
         classNamePrefix="vp-select"
         options={groups.map(([type, label]) => ({
-          label,
+          label: t(label),
           options: personas.filter((p) => p.personaType === type).map((p) => ({
             value: String(p.id),
-            label: personaLabel(p),
+            label: personaLabel(p, t, s),
           })),
         })).filter((group) => group.options.length)}
-        value={user ? { value: String(user.id), label: personaLabel(user) } : null}
+        value={user ? { value: String(user.id), label: personaLabel(user, t, s) } : null}
         onChange={(option) => { if (option) onSwitch(Number(option.value)) }}
-        placeholder="Elegir persona…"
+        placeholder={t('header.choosePersona')}
         isSearchable
         styles={selectStyles}
         components={{ SingleValue: SlidingValue }}
       />
     </label>
     <Alerts user={user} />
-    <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
+    <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? t('header.light') : t('header.dark')}</button>
+    <button className="lang-toggle" aria-label={t('lang.label')} onClick={() => setLang(lang === 'en' ? 'es' : 'en')}>{t('lang.switchTo')}</button>
   </header>
 }

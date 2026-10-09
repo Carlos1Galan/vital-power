@@ -1,15 +1,17 @@
+import { useT, useLang, type TextKey } from './i18n.ts'
 import { useEffect, useState } from 'react'
 import { api } from './api.ts'
 import OrgForm from './OrgForm.tsx'
 
-type Outage = { label: string; without: number; regions: { name: string; without: number }[] }
+type Outage = { label: TextKey; without: number; regions: { name: string; without: number }[] }
 
 // Counts up to the live figure once; jumps straight there when the visitor prefers reduced motion.
 function useCountUp(target: number | null) {
   const [shown, setShown] = useState(0)
   useEffect(() => {
     if (target === null) return
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return setShown(target)
+    // A background tab gets no animation frames, so the figure would sit at 0 until someone looked.
+    if (document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return setShown(target)
     const start = performance.now()
     let frame = requestAnimationFrame(function tick(now) {
       const t = Math.min(1, (now - start) / 900)
@@ -22,6 +24,8 @@ function useCountUp(target: number | null) {
 }
 
 export default function Landing() {
+  const t = useT()
+  const lang = useLang()
   const [outage, setOutage] = useState<Outage | null>(null)
   const shown = useCountUp(outage?.without ?? null)
 
@@ -30,59 +34,59 @@ export default function Landing() {
     const load = () => api.public.status.$get().then((r) => r.json()).then((s) => {
       if (!active || !s.regions.length) return
       const regions = s.regions.map((r) => ({ name: r.name, without: r.totalClientsWithoutService })).sort((a, b) => b.without - a.without)
-      setOutage({ label: s.mode === 'replay' ? 'Recorded outage (replay)' : s.stale ? 'Last reading from LUMA' : 'Right now in Puerto Rico', without: regions.reduce((n, r) => n + r.without, 0), regions: regions.slice(0, 3) })
+      setOutage({ label: s.mode === 'replay' ? 'landing.recorded' : s.stale ? 'landing.lastReading' : 'landing.now', without: regions.reduce((n, r) => n + r.without, 0), regions: regions.slice(0, 3) })
     }).catch(() => {}) // the hero stands without the live figure
     void load()
     const timer = setInterval(load, 30_000)
     return () => { active = false; clearInterval(timer) }
   }, [])
 
-  return <article className="landing" lang="en">
+  return <article className="landing">
     <section className="hero">
       <div className="hero-text">
-        <h1>Know who to call first when the power goes out.</h1>
-        <p className="lead">VitalPower helps care teams in Puerto Rico reach the people who depend on electricity for medical equipment, starting with whoever has the least time.</p>
+        <h1>{t('landing.title')}</h1>
+        <p className="lead">{t('landing.lead')}</p>
         <p className="hero-actions">
-          <a className="button" href="/org">See the call list</a>
-          <a className="button quiet" href="/app">Register a patient</a>
-          <a className="button quiet" href="#register">Register your organization</a>
+          <a className="button" href="/org">{t('landing.callList')}</a>
+          <a className="button quiet" href="/app">{t('landing.registerPatient')}</a>
+          <a className="button quiet" href="#register">{t('landing.registerOrg')}</a>
         </p>
       </div>
-      {outage && <aside className="live-panel" aria-label="Live outage figures from LUMA">
-        <p className="live-label"><span className="dot" />{outage.label}</p>
-        <p className="live-number">{shown.toLocaleString('en-US')}</p>
-        <p className="live-caption">homes and businesses without power</p>
-        <ul>{outage.regions.map((r) => <li key={r.name}><span>{r.name}</span><span>{r.without.toLocaleString('en-US')}</span></li>)}</ul>
-        <p className="live-source">Source: LUMA public outage feed</p>
+      {outage && <aside className="live-panel" aria-label={t('landing.figures')}>
+        <p className="live-label"><span className="dot" />{t(outage.label)}</p>
+        <p className="live-number">{shown.toLocaleString(lang === 'en' ? 'en-US' : 'es-PR')}</p>
+        <p className="live-caption">{t('landing.withoutPower')}</p>
+        <ul>{outage.regions.map((r) => <li key={r.name}><span>{r.name}</span><span>{r.without.toLocaleString(lang === 'en' ? 'en-US' : 'es-PR')}</span></li>)}</ul>
+        <p className="live-source">{t('landing.source')}</p>
       </aside>}
     </section>
 
     <section className="how">
-      <h2>How it works</h2>
+      <h2>{t('landing.how')}</h2>
       <ol>
-        <li><h3>We watch for outages</h3><p>Every three minutes we read LUMA's public outage reports and note which neighborhoods lost power.</p></li>
-        <li><h3>We check on registered patients</h3><p>Patients and caregivers in those neighborhoods get one question: "¿Tiene luz en su casa?"</p></li>
-        <li><h3>Coordinators call the most urgent first</h3><p>The call list is ranked by fixed rules, and every person on it comes with the reason they are there.</p></li>
+        <li><h3>{t('landing.watch')}</h3><p>{t('landing.watchNote')}</p></li>
+        <li><h3>{t('landing.check')}</h3><p>{t('landing.checkNote')}</p></li>
+        <li><h3>{t('landing.callFirst')}</h3><p>{t('landing.callFirstNote')}</p></li>
       </ol>
-      <p className="fine-print">This is a demo. All patient information is fictional.</p>
+      <p className="fine-print">{t('landing.demo')}</p>
     </section>
 
     <section className="compare">
-      <h2>How this is different</h2>
-      <p className="lead">HHS emPOWER counts the Medicare patients who depend on electricity, by ZIP code. It does not include people on Plan Vital or private insurance, and it does not say who they are.</p>
-      <p className="compare-line">emPOWER tells you how many. <em>VitalPower tells you who to call first.</em></p>
+      <h2>{t('landing.different')}</h2>
+      <p className="lead">{t('landing.empower')}</p>
+      <p className="compare-line">{t('landing.howMany')} <em>{t('landing.whoFirst')}</em></p>
     </section>
 
     <section className="register" id="register">
-      <h2>Register your organization</h2>
-      <p className="lead">Health plans, municipal emergency offices, clinics and equipment suppliers can sign up to receive the call list for the municipalities they serve. The AI never decides who goes first: the order comes from fixed rules, and a person confirms every step.</p>
+      <h2>{t('landing.registerOrg')}</h2>
+      <p className="lead">{t('landing.registerNote')}</p>
       <OrgForm />
     </section>
 
     <footer className="site-footer">
       <img className="on-light" src="/vitalpower-icon.svg" alt="" width={84} height={60} />
       <img className="on-dark" src="/vitalpower-icon-light.svg" alt="" width={84} height={60} />
-      <p>VitalPower · Built for the Caribbean AI Summit hackathon, 2026.</p>
+      <p>{t('landing.footer')}</p>
     </footer>
   </article>
 }

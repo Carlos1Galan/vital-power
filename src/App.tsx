@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { useT } from './i18n.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
@@ -29,6 +30,7 @@ const login = async (userId: number) => {
 }
 
 export default function App() {
+  const t = useT()
   const [personas, setPersonas] = useState<Persona[]>([])
   const [user, setUser] = useState<Persona | null>(null)
   const [ready, setReady] = useState(false)
@@ -86,14 +88,16 @@ export default function App() {
     }
   }
 
+  const [connectionBefore, connectionAfter] = t('app.connection').split('{command}')
+
   return <>
     <Header personas={personas} user={user} onSwitch={switchTo} />
     <main>
       {error && <div role="alert" className="connection-error">
-        <p>No se pudo conectar con el API. ¿Está corriendo <code>npm run api</code>?</p>
-        <button onClick={() => retryId === null ? load() : switchTo(retryId)}>Reintentar</button>
+        <p>{connectionBefore}<code>{t('app.connectionCommand')}</code>{connectionAfter}</p>
+        <button onClick={() => retryId === null ? load() : switchTo(retryId)}>{t('common.retry')}</button>
       </div>}
-      {!ready ? (!error && <p>Cargando…</p>) : path === '/app' && user ? <Caregiver key={user.id} user={user} />
+      {!ready ? (!error && <p>{t('common.loading')}</p>) : path === '/app' && user ? <Caregiver key={user.id} user={user} />
         : path === '/org' && user ? <Org key={user.id} user={user} />
         : path === '/admin' && user ? <Admin key={user.id} user={user} /> : <Landing />}
     </main>
