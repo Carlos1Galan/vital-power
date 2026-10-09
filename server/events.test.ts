@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { db } from './db.ts'
 import { pollOnce } from './luma.ts'
-import { CHECKIN_MESSAGE, callList, claimEvent, coverageGaps, knownZones, processTownsReading, setEventStatus } from './events.ts'
+import { CHECKIN_MESSAGE, callList, claimEvent, coverageGaps, feedStatus, knownZones, processTownsReading, setEventStatus } from './events.ts'
 
 // Seed: patients 1 + 5 in CAGUAS / URB VILLA BLANCA, 2 in CAGUAS / CANABONCITO/SEC HORMIGAS, 3 + 4 in SAN JUAN / HATO REY SUR.
 // Orgs: 1 approved (CAGUAS, SAN JUAN), 2 approved (CAGUAS), 3 pending (SAN JUAN).
@@ -126,5 +126,28 @@ test('coverage gaps list exactly the patients no approved organization covers', 
     assert.deepEqual(coverageGaps().map((p) => p.id), [3, 4])
   } finally {
     db.exec('ROLLBACK')
+  }
+})
+
+test('processing the same reading twice adds no second check-in', () => {
+  const r = reading({ CAGUAS: z('URB VILLA BLANCA') })
+  processTownsReading(r)
+  processTownsReading(r) // replay restarted from the same reading
+  assert.equal((db.prepare('SELECT count(*) n FROM checkins').get() as { n: number }).n, 2)
+})
+
+test('a closed event cannot be claimed', () => {
+  processTownsReading(reading({ CAGUAS: z('URB VILLA BLANCA') }))
+  const [e] = openEvents()
+  setEventStatus(e.id, 'false_alarm')
+  assert.equal(claimEvent(e.id, 1, 2), false)
+})
+
+test('replay with a cursor that points at no reading is stale, not fresh', () => {
+  db.exec("UPDATE settings SET value = 'replay' WHERE key = 'mode'; UPDATE settings SET value = '424242' WHERE key = 'replay_cursor'")
+  try {
+    assert.deepEqual(feedStatus(), { lastReadingAt: null, stale: true, mode: 'replay' })
+  } finally {
+    db.exec("UPDATE settings SET value = 'live' WHERE key = 'mode'")
   }
 })

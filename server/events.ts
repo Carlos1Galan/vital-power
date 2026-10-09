@@ -4,12 +4,12 @@ import { POLL_MS } from './luma.ts'
 
 type Reading = { id: number; fetched_at: string; ok: number }
 
-// Shared by every response: { lastReadingAt, stale, mode }. Replay is labeled by mode, never stale.
+// Shared by every response: { lastReadingAt, stale, mode }. Replay is labeled by mode; stale only if its reading is gone.
 export function feedStatus(now = Date.now()) {
   const mode = setting('mode') as 'live' | 'replay'
   if (mode === 'replay') {
     const r = db.prepare('SELECT fetched_at FROM luma_readings WHERE id = ?').get(Number(setting('replay_cursor'))) as Reading | undefined
-    return { lastReadingAt: r?.fetched_at ?? null, stale: false, mode }
+    return { lastReadingAt: r?.fetched_at ?? null, stale: !r, mode }
   }
   const last = db.prepare("SELECT ok FROM luma_readings WHERE source = 'live' ORDER BY id DESC LIMIT 1").get() as Reading | undefined
   const good = db.prepare("SELECT fetched_at FROM luma_readings WHERE source = 'live' AND ok = 1 ORDER BY id DESC LIMIT 1").get() as Reading | undefined
@@ -40,7 +40,8 @@ export function processTownsReading(id: number) {
       SELECT p.id, :id FROM patients p
       WHERE (p.municipality, p.zone) IN (${ZONES_IN})
         AND NOT EXISTS (SELECT 1 FROM outage_events e WHERE e.patient_id = p.id AND e.status IN ('possible','confirmed'))`).run({ id })
-    db.prepare('INSERT INTO checkins (event_id, message) SELECT id, ? FROM outage_events WHERE opened_reading_id = ?').run(CHECKIN_MESSAGE, id)
+    db.prepare(`INSERT INTO checkins (event_id, message) SELECT e.id, ? FROM outage_events e
+      WHERE e.opened_reading_id = ? AND NOT EXISTS (SELECT 1 FROM checkins c WHERE c.event_id = e.id)`).run(CHECKIN_MESSAGE, id)
     db.prepare(`UPDATE outage_events SET status = 'restored', closed_reading_id = :id, closed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
       WHERE status IN ('possible','confirmed') AND patient_id IN (
         SELECT p.id FROM patients p
@@ -66,7 +67,7 @@ const COVERED_BY = `SELECT om.municipality FROM org_municipalities om JOIN organ
 // One conditional UPDATE: the database decides the race. false = already claimed, or not this org's to claim.
 export function claimEvent(eventId: number, orgId: number, userId: number) {
   return db.prepare(`UPDATE outage_events SET claimed_by_org_id = :orgId, claimed_by = :userId, claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    WHERE id = :eventId AND claimed_by_org_id IS NULL
+    WHERE id = :eventId AND claimed_by_org_id IS NULL AND status IN ('possible','confirmed')
       AND (SELECT municipality FROM patients WHERE id = outage_events.patient_id) IN (${COVERED_BY})`)
     .run({ eventId, orgId, userId }).changes > 0
 }
