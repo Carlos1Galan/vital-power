@@ -35,14 +35,17 @@ export default function CallList({ user }: { user: Persona }) {
   const act = async (request: () => Promise<Response>) => {
     setBusy(true)
     setError('')
+    let ok = false
     try {
       const res = await request()
-      if (!res.ok) setError(await errorText(res))
+      ok = res.ok
+      if (!ok) setError(await errorText(res))
     } catch {
       setError('No se pudo completar la acción.')
     }
     await load()
     setBusy(false)
+    return ok
   }
 
   if (!events) return error ? <p role="alert" className="connection-error">{error}</p> : <p>Cargando la lista…</p>
@@ -77,7 +80,7 @@ export default function CallList({ user }: { user: Persona }) {
   </>
 }
 
-function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy: boolean; act: (request: () => Promise<Response>) => Promise<void> }) {
+function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy: boolean; act: (request: () => Promise<Response>) => Promise<boolean> }) {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [error, setError] = useState('')
   const [reached, setReached] = useState(true)
@@ -95,6 +98,14 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
   }, [id])
   useEffect(() => { void load() }, [load])
 
+  // The automatic reading is stored a few seconds after the reply; look again while it is still on its way.
+  const awaitingReading = !!detail?.checkin?.replyAt && !detail.checkin.aiParsed && Date.now() - Date.parse(detail.checkin.replyAt) < 60_000
+  useEffect(() => {
+    if (!awaitingReading) return
+    const timer = setTimeout(load, 3000)
+    return () => clearTimeout(timer)
+  }, [awaitingReading, detail, load])
+
   if (error) return <p role="alert" className="call-detail connection-error">{error}</p>
   if (!detail) return <p className="call-detail">Cargando el caso…</p>
   const { event, checkin, outcomes } = detail
@@ -109,7 +120,11 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
         {checkin.replyText
           ? <blockquote>{checkin.replyText}<footer>Texto original · {ago(checkin.replyAt!)}</footer></blockquote>
           : <p className="muted">Todavía no han contestado.</p>}
-        {checkin.replyText && <p className="muted">Lectura automática: {checkin.aiParsed ?? 'todavía no disponible. Lea la respuesta original.'}</p>}
+        {checkin.aiParsed ? <div className="automatic-reading">
+          <p>Lectura automática: {({ no: 'dice que NO tiene luz', yes: 'dice que SÍ tiene luz', unclear: 'no queda claro si tiene luz' })[checkin.aiParsed.hasPower]}{checkin.aiParsed.batteryHours !== null && ` · batería: ${checkin.aiParsed.batteryHours} h`}</p>
+          <p>{checkin.aiParsed.summary}</p>
+          <p className="muted">Es una lectura automática. Confirme usted con el texto original.</p>
+        </div> : checkin.replyText && <p className="muted">Lectura automática no disponible. Lea la respuesta original.</p>}
         {checkin.confirmedAt && <p className="muted">Confirmado por un coordinador {ago(checkin.confirmedAt)}.</p>}
         {canConfirm && <p className="confirm-actions">
           <button disabled={busy} onClick={() => confirm(false)}>Confirmar: no tiene luz</button>
@@ -128,7 +143,8 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
       {event.mine
         ? <form className="outcome-form" onSubmit={async (ev) => {
             ev.preventDefault()
-            await act(() => api.events[':id'].outcome.$post({ param: { id: String(id) }, json: { reached, outcome, nextAction } }))
+            const saved = await act(() => api.events[':id'].outcome.$post({ param: { id: String(id) }, json: { reached, outcome, nextAction } }))
+            if (!saved) return // keep what the coordinator typed
             setOutcome('')
             setNextAction('')
             await load()
@@ -140,5 +156,64 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
           </form>
         : <p className="muted">{event.claimedBy ? `Solo ${event.claimedBy} puede registrar el resultado.` : 'Tome el caso para registrar el resultado de la llamada.'}</p>}
     </section>
+    <BriefingSection event={event} initial={detail.briefing} reload={load} />
   </div>
+}
+
+function BriefingSection({ event, initial, reload }: { event: Detail['event']; initial: Detail['briefing']; reload: () => Promise<void> }) {
+  const [briefing, setBriefing] = useState(initial)
+  const [text, setText] = useState(initial?.approvedText ?? initial?.draftText ?? '')
+  const [busy, setBusy] = useState<'draft' | 'approve' | null>(null)
+  const [error, setError] = useState('')
+
+  // Follow the server only when the stored briefing itself changed; a background refresh must not overwrite unsaved edits.
+  const stored = initial ? `${initial.id}:${initial.approvedAt}` : ''
+  useEffect(() => {
+    setBriefing(initial)
+    setText(initial?.approvedText ?? initial?.draftText ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stored briefing, not on the object identity
+  }, [stored])
+
+  const draft = async () => {
+    setBusy('draft')
+    setError('')
+    try {
+      const res = await api.events[':id'].briefing.$post({ param: { id: String(event.id) } })
+      if (!res.ok) setError(await errorText(res))
+      else {
+        const data: InferResponseType<typeof api.events[':id']['briefing']['$post'], 201> = await res.json()
+        setBriefing({ id: data.id, draftText: data.draftText, approvedText: null, approvedAt: null })
+        setText(data.draftText)
+      }
+    } catch { setError('No se pudo redactar el resumen. Intente de nuevo.') }
+    finally { setBusy(null) }
+  }
+  const approve = async () => {
+    if (!briefing) return
+    setBusy('approve')
+    setError('')
+    try {
+      const res = await api.briefings[':id'].approve.$post({ param: { id: String(briefing.id) }, json: { text } })
+      if (!res.ok) setError(await errorText(res))
+      else await reload()
+    } catch { setError('No se pudo aprobar el resumen. Intente de nuevo.') }
+    finally { setBusy(null) }
+  }
+
+  return <section className="outcome-form briefing">
+    <h3>Resumen para la llamada</h3>
+    {error && <p role="alert" className="connection-error">{error}</p>}
+    {event.mine ? <>
+      {briefing && <>
+        <label>Resumen<textarea rows={10} maxLength={4000} value={text} disabled={busy !== null} onChange={(ev) => setText(ev.target.value)} /></label>
+        <p className="muted">Borrador automático. Revíselo y corríjalo antes de aprobar.</p>
+        <button disabled={busy !== null || !text.trim() || text.length > 4000} onClick={approve}>{busy === 'approve' ? 'Aprobando…' : 'Aprobar resumen'}</button>
+        <p className="muted" aria-live="polite">{briefing.approvedAt ? `Aprobado ${ago(briefing.approvedAt)}.` : ''}</p>
+      </>}
+      <button className={briefing ? 'quiet' : undefined} disabled={busy !== null} onClick={draft}>{busy === 'draft' ? 'Redactando…' : briefing ? 'Redactar de nuevo' : 'Redactar resumen'}</button>
+    </> : <>
+      <p className="muted">{event.claimedBy ? `Solo ${event.claimedBy} puede redactar el resumen.` : 'Tome el caso para redactar el resumen de la llamada.'}</p>
+      {briefing?.approvedAt && <p className="briefing-text">{briefing.approvedText}</p>}
+    </>}
+  </section>
 }

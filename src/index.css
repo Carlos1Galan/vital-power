@@ -188,9 +188,21 @@ blockquote footer { margin-top: 0.4rem; font-size: var(--text-small); color: var
 .claimed.mine { background: var(--action-tint); border-color: var(--action); color: var(--action-strong); }
 .call-detail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--space-4); margin-top: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); animation: rise var(--normal) var(--ease-out) both; }
 .call-detail .question { font-size: 1.3rem; }
+.call-detail .briefing { grid-column: 1 / -1; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.call-detail .briefing textarea { min-height: 14rem; }
 .outcome-form { display: grid; gap: var(--space-2); justify-items: start; }
 .outcome-form label, .outcome-form input:not([type=checkbox]) { width: 100%; }
 .outcome { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.automatic-reading { font-size: var(--text-small); color: var(--ink-soft); }
+.briefing-text { white-space: pre-wrap; }
+.intake { max-width: 44rem; display: grid; gap: var(--space-3); }
+.intake-fields { display: grid; gap: var(--space-2); justify-items: start; }
+.intake-fields > label { width: 100%; }
+.intake-fields h2 { margin-top: var(--space-2); }
+.intake-fields .check input { flex-shrink: 0; }
+.need-row { display: grid; gap: var(--space-2); width: 100%; padding-block: var(--space-2); border-bottom: 1px solid var(--line); }
+.need-row button { justify-self: start; }
+button.intake-link { border-color: transparent; text-decoration: underline; text-underline-offset: 0.2em; }
 @media (max-width: 46rem) { .call { grid-template-columns: 1fr; } .call-rank { display: flex; align-items: baseline; gap: var(--space-2); } }
 
 /* Landing (English, for judges and partners). The hero is a full-width night band with the live LUMA figure. */

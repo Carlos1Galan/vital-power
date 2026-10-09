@@ -3,6 +3,11 @@ import assert from 'node:assert/strict'
 import { db } from './db.ts'
 import { app } from './app.ts'
 import { processTownsReading } from './events.ts'
+import { ai } from './ai.ts'
+
+// No network in tests: the AI reading of a reply is off here (server/ai.test.ts covers it).
+ai.complete = (async () => { throw new Error('AI is off in this test file') }) as typeof ai.complete
+console.error = () => {} // the reply route logs that failure by design
 
 const call = async (method: string, path: string, body?: unknown, cookie?: string) => {
   const res = await app.request(`/api${path}`, {
@@ -29,7 +34,7 @@ const checkinOf = (patientId: number) => (db.prepare('SELECT id FROM checkins WH
 const statusOf = (eventId: number) => (db.prepare('SELECT status FROM outage_events WHERE id = ?').get(eventId) as { status: string }).status
 
 beforeEach(() => {
-  db.exec("DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings; UPDATE settings SET value = 'live' WHERE key = 'mode'")
+  db.exec("DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings; UPDATE settings SET value = 'live' WHERE key = 'mode'")
   outage()
 })
 
@@ -94,7 +99,7 @@ test('a coordinator cannot see or claim outside its municipalities; a pending or
   assert.equal(statusOf(sanJuan), 'possible')
 })
 
-test('the event view shows the original reply next to the (not yet parsed) AI reading', async () => {
+test('the event view shows the original reply, with no AI reading when the AI is unavailable', async () => {
   await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
   await call('POST', `/events/${eventOf(1)}/claim`, undefined, PLAN)
   const { json } = await call('GET', `/events/${eventOf(1)}`, undefined, PLAN)

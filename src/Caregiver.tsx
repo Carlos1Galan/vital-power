@@ -3,6 +3,7 @@ import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
 import { ago, errorText, needText } from './lib.ts'
+import Intake from './Intake.tsx'
 
 type Patient = InferResponseType<typeof api.patients.mine.$get, 200>['patients'][number]
 type Checkin = InferResponseType<typeof api.checkins.pending.$get, 200>['checkins'][number]
@@ -18,6 +19,8 @@ export default function Caregiver({ user }: { user: Persona }) {
   const [checkins, setCheckins] = useState<Checkin[]>([])
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [intake, setIntake] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +53,12 @@ export default function Caregiver({ user }: { user: Persona }) {
     await load()
   }
 
+  if (intake) return <Intake hasSelf={patients?.some((p) => p.isSelf) ?? false} onCancel={() => setIntake(false)} onSaved={async () => {
+    setIntake(false)
+    setSaved(true)
+    await load()
+  }} />
+
   return <section>
     <h1>Hola, {user.name}</h1>
     {error && <p role="alert" className="connection-error">{error}</p>}
@@ -59,6 +68,8 @@ export default function Caregiver({ user }: { user: Persona }) {
     {!checkins.length && <p className="card empty" aria-live="polite">{sent ? 'Gracias. Su respuesta llegó al equipo de coordinación.' : 'No tiene avisos pendientes.'}</p>}
 
     <h2>{user.personaType === 'self-patient' ? 'Mi registro' : 'Mis pacientes'}</h2>
+    <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>Registrar a una persona</button></p>
+    <p aria-live="polite">{saved ? 'Registro guardado.' : ''}</p>
     {!patients ? !error && <p>Cargando…</p> : <ul className="patients">
       {patients.map((p) => {
         const [tone, label] = STATUS[p.outage ?? 'none']
