@@ -9,10 +9,15 @@ import type { Persona } from './App.tsx'
 // use, so the server's visibility rules decide what each person can be alerted about. No push server, no new table:
 // alerts arrive while the app is open in a tab (also a background tab), not when the browser is closed.
 
-type Alert = { id: string; tone: 'urgent' | 'info'; title: string; body: string; href?: string; action?: string; leaving?: boolean }
+// about: the snapshot entries an alert is about. Once none of them still applies (the check-in was answered, the case was
+// taken or is no longer urgent) the card and its system notification are withdrawn, without anyone pressing the close button.
+type Alert = { id: string; tone: 'urgent' | 'info'; title: string; body: string; href?: string; action?: string; about?: string[]; leaving?: boolean }
 type Draft = Omit<Alert, 'id' | 'leaving'>
 // takenByOther: another organization already has the case, so it is not this person's to call.
-type Snapshot = Map<string, { name: string; tier?: number; reason?: string; replied?: boolean; takenByOther?: boolean }>
+type Entry = { name: string; tier?: number; reason?: string; replied?: boolean; takenByOther?: boolean }
+type Snapshot = Map<string, Entry>
+// Other screens announce a change (a reply sent, a case taken) so the alerts look again at once instead of at the next poll.
+export const ALERTS_CHANGED = 'vp:changed'
 
 const POLL_MS = 10_000
 const INFO_MS = 9_000 // an informative alert leaves by itself; an urgent one stays until someone closes it
@@ -26,7 +31,7 @@ const list = (names: string[], t: Translator, s: ServerText) => names.length > 3
 const trim = (all: Alert[]) => all.length <= MAX_SHOWN ? all : [...all.filter((a) => a.tone === 'urgent'), ...all.filter((a) => a.tone !== 'urgent')].slice(0, MAX_SHOWN)
 
 // What each role watches. read() returns null when the request fails, so one bad poll never looks like "everything disappeared".
-const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot | null>; diff: (before: Snapshot | null, now: Snapshot, t: Translator, s: ServerText) => Draft[] }> = {
+const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot | null>; applies: (entry: Entry) => boolean; diff: (before: Snapshot | null, now: Snapshot, t: Translator, s: ServerText) => Draft[] }> = {
   coordinator: {
     read: async (user) => {
       const res = await api['call-list'].$get()
@@ -34,22 +39,23 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       return new Map((await res.json()).events.map((e) => [String(e.eventId), { name: e.patientName, tier: e.tier, reason: e.reasons[0], replied: !!e.checkinReplyAt,
         takenByOther: e.claimedByOrgId !== null && e.claimedByOrgId !== user.orgId }]))
     },
+    applies: (c) => c.tier === 1 && !c.takenByOther, // still this organization's to call now
     diff: (before, now, t, s) => {
       if (!before) { // first look as this persona: one summary instead of a pile of cards
         const urgent = [...now].filter(([, c]) => c.tier === 1 && !c.takenByOther)
         if (!urgent.length) return []
         const [id, first] = urgent[0]
         return [{ tone: 'urgent', title: urgent.length === 1 ? t('alerts.callNow', { name: s(first.name) }) : t('alerts.callCount', { count: urgent.length }),
-          body: urgent.length === 1 ? s(first.reason) : list(urgent.map(([, c]) => c.name), t, s), href: `/org#caso-${id}`, action: t('common.viewCase') }]
+          body: urgent.length === 1 ? s(first.reason) : list(urgent.map(([, c]) => c.name), t, s), href: `/org#caso-${id}`, action: t('common.viewCase'), about: urgent.map(([key]) => key) }]
       }
       const out: Draft[] = []
       for (const [id, c] of now) {
         const was = before.get(id)
         const open = { href: `/org#caso-${id}`, action: t('common.viewCase') }
         const mustCall = c.tier === 1 && !c.takenByOther
-        if (!was) out.push(mustCall ? { tone: 'urgent', title: t('alerts.callNow', { name: s(c.name) }), body: s(c.reason), ...open } : { tone: 'info', title: t('alerts.newCase', { name: s(c.name) }), body: s(c.reason), ...open })
+        if (!was) out.push(mustCall ? { tone: 'urgent', title: t('alerts.callNow', { name: s(c.name) }), body: s(c.reason), ...open, about: [id] } : { tone: 'info', title: t('alerts.newCase', { name: s(c.name) }), body: s(c.reason), ...open })
         else {
-          if (mustCall && was.tier !== 1) out.push({ tone: 'urgent', title: t('alerts.urgent', { name: s(c.name) }), body: s(c.reason), ...open })
+          if (mustCall && was.tier !== 1) out.push({ tone: 'urgent', title: t('alerts.urgent', { name: s(c.name) }), body: s(c.reason), ...open, about: [id] })
           if (c.replied && !was.replied) out.push({ tone: 'info', title: t('alerts.replied', { name: s(c.name) }), body: t('alerts.openReply'), ...open })
         }
       }
@@ -62,10 +68,12 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       if (!res.ok) return null
       return new Map((await res.json()).checkins.map((c) => [String(c.id), { name: c.patientName, reason: c.message }]))
     },
+    applies: () => true, // a check-in stays pending until it is answered, and then it leaves the snapshot
     diff: (before, now, t, s) => {
-      const fresh = [...now].filter(([id]) => !before?.has(id)).map(([, c]) => c)
+      const freshIds = [...now.keys()].filter((id) => !before?.has(id))
+      const fresh = freshIds.map((id) => now.get(id)!)
       if (!fresh.length) return []
-      return [{ tone: 'urgent', title: fresh[0].reason !== undefined ? s(fresh[0].reason) : t('alerts.hasAlert'), body: t('alerts.forNames', { names: list(fresh.map((c) => c.name), t, s) }), href: '/app#avisos', action: t('alerts.reply') }]
+      return [{ tone: 'urgent', title: fresh[0].reason !== undefined ? s(fresh[0].reason) : t('alerts.hasAlert'), body: t('alerts.forNames', { names: list(fresh.map((c) => c.name), t, s) }), href: '/app#avisos', action: t('alerts.reply'), about: freshIds }]
     },
   },
   admin: {
@@ -74,6 +82,7 @@ const WATCH: Record<Persona['role'], { read: (user: Persona) => Promise<Snapshot
       if (!res.ok) return null
       return new Map((await res.json()).organizations.filter((o) => o.status === 'pending').map((o) => [String(o.id), { name: o.name }]))
     },
+    applies: () => true,
     diff: (before, now, t, s) => {
       const fresh = [...now].filter(([id]) => !before?.has(id)).map(([, o]) => o.name)
       if (!fresh.length) return []
@@ -109,15 +118,19 @@ export default function Alerts({ user }: { user: Persona | null }) {
   const s = useServerText()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [enabled, setEnabled] = useState(stored) // the person asked for sound and system notifications
-  const [unseen, setUnseen] = useState(0)
+  const [hidden, setHidden] = useState(document.hidden)
   const enabledRef = useRef(enabled)
   enabledRef.current = enabled
+  const alertsRef = useRef(alerts)
+  alertsRef.current = alerts
   const serial = useRef(0)
   const held = useRef(new Set<string>()) // cards being read (pointer over them or focus inside) do not leave by themselves
-  const systemNotes = useRef<Notification[]>([])
+  const systemNotes = useRef(new Map<string, Notification>())
 
   const dismiss = useCallback((id: string) => {
     held.current.delete(id)
+    systemNotes.current.get(id)?.close()
+    systemNotes.current.delete(id)
     setAlerts((all) => all.map((a) => a.id === id ? { ...a, leaving: true } : a))
     setTimeout(() => setAlerts((all) => all.filter((a) => a.id !== id)), LEAVE_MS)
   }, [])
@@ -131,7 +144,6 @@ export default function Alerts({ user }: { user: Persona | null }) {
     const fresh = drafts.map((d) => ({ ...d, id: `a${++serial.current}` }))
     setAlerts((all) => trim([...fresh, ...all]))
     for (const a of fresh) if (a.tone === 'info') setTimeout(() => expire(a.id), INFO_MS)
-    if (document.hidden) setUnseen((n) => n + fresh.length)
     if (!enabledRef.current) return
     if (fresh.some((a) => a.tone === 'urgent')) chime()
     if (!canNotify() || Notification.permission !== 'granted') return
@@ -140,7 +152,7 @@ export default function Alerts({ user }: { user: Persona | null }) {
       try {
         const note = new Notification(a.title, { body: a.body, icon: '/android-chrome-192x192.png', tag: a.id })
         note.onclick = () => { window.focus(); if (a.href) location.assign(a.href); note.close() }
-        systemNotes.current.push(note)
+        systemNotes.current.set(a.id, note)
       } catch { /* some browsers only allow notifications from a service worker: the card still shows */ }
     }
   }, [expire])
@@ -154,34 +166,43 @@ export default function Alerts({ user }: { user: Persona | null }) {
     if (!who) return
     let active = true, busy = false, before: Snapshot | null = null
     setAlerts([])
-    setUnseen(0)
     const tick = async () => {
       if (busy) return // a slow answer must not be overtaken by the next poll
       busy = true
       const now = await WATCH[who.role].read(who).catch(() => null)
       busy = false
       if (!active || !now) return
+      // Withdraw what is no longer true before showing what is new.
+      const stillApplies = (key: string) => { const entry = now.get(key); return !!entry && WATCH[who.role].applies(entry) }
+      for (const a of alertsRef.current) if (a.about && !a.leaving && !a.about.some(stillApplies)) dismiss(a.id)
       show(WATCH[who.role].diff(before, now, t, s))
       before = now
     }
     void tick()
     const timer = setInterval(tick, POLL_MS)
+    const onChange = () => void tick()
+    addEventListener(ALERTS_CHANGED, onChange)
     return () => {
       active = false
       clearInterval(timer)
-      for (const note of systemNotes.current) note.close() // another persona must not act on these
-      systemNotes.current = []
+      removeEventListener(ALERTS_CHANGED, onChange)
+      for (const note of systemNotes.current.values()) note.close() // another persona must not act on these
+      systemNotes.current.clear()
     }
-  }, [userId, show])
+  }, [userId, show, dismiss])
 
-  // A count in the tab title while the page is in the background.
+  // While the page is in the background, the tab title counts the alerts that are still on screen.
+  const waiting = hidden ? alerts.filter((a) => !a.leaving).length : 0
   useEffect(() => {
     const base = document.title.replace(/^\(\d+\) /, '')
-    document.title = unseen ? `(${unseen}) ${base}` : base
-    const seen = () => { if (!document.hidden) setUnseen(0) }
+    document.title = waiting ? `(${waiting}) ${base}` : base
+    return () => { document.title = base }
+  }, [waiting])
+  useEffect(() => {
+    const seen = () => setHidden(document.hidden)
     document.addEventListener('visibilitychange', seen)
-    return () => { document.removeEventListener('visibilitychange', seen); document.title = base }
-  }, [unseen])
+    return () => document.removeEventListener('visibilitychange', seen)
+  }, [])
 
   const toggle = async () => {
     const next = !enabled

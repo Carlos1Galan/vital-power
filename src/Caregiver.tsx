@@ -5,12 +5,14 @@ import { api } from './api.ts'
 import type { Persona } from './App.tsx'
 import { ago, errorText, needText } from './lib.ts'
 import Intake from './Intake.tsx'
+import { ALERTS_CHANGED } from './Alerts.tsx'
 
 type Patient = InferResponseType<typeof api.patients.mine.$get, 200>['patients'][number]
 type Checkin = InferResponseType<typeof api.checkins.pending.$get, 200>['checkins'][number]
 
 const STATUS = {
   possible: ['warn', 'caregiver.possible'],
+  answered: ['warn', 'caregiver.answered'], // the family replied; a coordinator has not confirmed it yet
   confirmed: ['urgent', 'caregiver.confirmed'],
   none: ['ok', 'caregiver.none'],
 } as const
@@ -50,7 +52,7 @@ export default function Caregiver({ user }: { user: Persona }) {
     setError('')
     try {
       const res = await api.checkins[':id'].reply.$post({ param: { id: String(id) }, json: { text } })
-      if (res.ok) setSent(true)
+      if (res.ok) { setSent(true); dispatchEvent(new Event(ALERTS_CHANGED)) } // the alert about this check-in goes away now
       else setError(await errorText(res))
     } catch {
       setError(t('caregiver.replyError'))
@@ -78,7 +80,7 @@ export default function Caregiver({ user }: { user: Persona }) {
     <p aria-live="polite">{saved ? t('caregiver.saved') : ''}</p>
     {!patients ? !error && <p>{t('common.loading')}</p> : <ul className="patients">
       {patients.map((p) => {
-        const [tone, label] = STATUS[p.outage ?? 'none']
+        const [tone, label] = STATUS[p.outage === 'possible' && p.answered ? 'answered' : p.outage ?? 'none']
         return <li key={p.id} className="card">
           <h3>{s(p.name)}</h3>
           <p className={`status ${tone}`}>{t(label)}</p>

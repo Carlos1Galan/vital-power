@@ -128,18 +128,19 @@ export const appRoutes = new Hono()
     const u = currentUser(c)!
     const rows = db.prepare(`SELECT p.id, p.display_name AS name, p.municipality, p.zone, p.is_self AS isSelf, ${NEEDS} AS needs,
         e.status AS outage, o.name AS claimedBy,
+        (SELECT c.reply_at IS NOT NULL FROM checkins c WHERE c.event_id = e.id ORDER BY c.id DESC LIMIT 1) AS answered,
         (SELECT json_object('reached', co.reached, 'outcome', co.outcome, 'nextAction', co.next_action, 'createdAt', co.created_at)
            FROM call_outcomes co WHERE co.event_id = e.id ORDER BY co.id DESC LIMIT 1) AS lastCall
       FROM patients p
       LEFT JOIN outage_events e ON e.patient_id = p.id AND e.mode = :mode AND ${OPEN}
       LEFT JOIN organizations o ON o.id = e.claimed_by_org_id
       WHERE ${SEES} ORDER BY p.id`).all({ uid: u.id, orgId: u.orgId, mode: setting('mode') }) as
-      { id: number; name: string; municipality: string; zone: string | null; isSelf: number; needs: string; outage: 'possible' | 'confirmed' | null; claimedBy: string | null; lastCall: string | null }[]
+      { id: number; name: string; municipality: string; zone: string | null; isSelf: number; needs: string; outage: 'possible' | 'confirmed' | null; claimedBy: string | null; answered: number | null; lastCall: string | null }[]
     // What the family is told about the response: which organization took the case and the result of the last call.
     type LastCall = { reached: number; outcome: string; nextAction: string | null; createdAt: string }
     return c.json(withFeed({ patients: rows.map((p) => {
       const call = p.lastCall ? JSON.parse(p.lastCall) as LastCall : null
-      return { ...p, isSelf: !!p.isSelf, needs: JSON.parse(p.needs) as Need[], lastCall: call && { ...call, reached: !!call.reached } }
+      return { ...p, isSelf: !!p.isSelf, answered: !!p.answered, needs: JSON.parse(p.needs) as Need[], lastCall: call && { ...call, reached: !!call.reached } }
     }) }))
   })
   .get('/checkins/pending', requireRole('caregiver'), (c) => {

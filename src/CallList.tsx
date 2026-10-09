@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
+import { ALERTS_CHANGED } from './Alerts.tsx'
 import { ago, errorText, needText } from './lib.ts'
 
 type CallEvent = InferResponseType<typeof api['call-list']['$get']>['events'][number]
@@ -55,6 +56,7 @@ export default function CallList({ user }: { user: Persona }) {
       setError(t('calls.actionError'))
     }
     await load()
+    dispatchEvent(new Event(ALERTS_CHANGED)) // a case taken or confirmed can make its alert untrue
     setBusy(false)
     return ok
   }

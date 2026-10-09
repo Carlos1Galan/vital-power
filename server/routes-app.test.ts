@@ -64,6 +64,7 @@ test('pending check-ins are scoped to the caregiver and disappear once answered'
   assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: '  No hay luz desde las 3  ' }, ANA)).status, 200)
   assert.equal((db.prepare('SELECT reply_text FROM checkins WHERE id = ?').get(checkinOf(1)) as { reply_text: string }).reply_text, 'No hay luz desde las 3')
   assert.deepEqual((await call('GET', '/checkins/pending', undefined, ANA)).json.checkins, [])
+  assert.deepEqual((await call('GET', '/patients/mine', undefined, ANA)).json.patients.map((p: any) => [p.id, p.outage, p.answered]), [[1, 'possible', true], [2, null, false]])
   assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'otra vez' }, ANA)).status, 404) // one reply only
 })
 
