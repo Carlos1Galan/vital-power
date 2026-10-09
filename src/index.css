@@ -262,6 +262,12 @@ button.intake-link { border-color: transparent; text-decoration: underline; text
 .system th { font-weight: 700; color: var(--ink-soft); border-bottom-color: var(--line-strong); }
 
 @media (max-width: 52rem) { .hero { grid-template-columns: 1fr; } }
+/* Theme switch: Header.tsx animates a circular reveal of the new page; turn off the default cross-fade under it. */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+.theme-switching, .theme-switching * { transition: none !important; }
+::view-transition-old(root) { z-index: 0; }
+::view-transition-new(root) { z-index: 1; }
+
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
 @media (prefers-reduced-motion: reduce) {
