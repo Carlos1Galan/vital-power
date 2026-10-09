@@ -181,3 +181,29 @@ test('the demo reset returns to the seeded patients and organizations and keeps 
   assert.deepEqual({ ...ev }, { status: 'possible', claimed_by_org_id: null })
   assert.equal((await call('GET', '/checkins/pending', undefined, ANA)).json.checkins.length, 1) // the check-in can be answered again
 })
+
+test('a new caregiver signs up with a name, is signed in, and can register a patient', async () => {
+  const res = await app.request('/api/demo/caregivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '  Marta Rivera  ' }) })
+  assert.equal(res.status, 201)
+  const made = (await res.json()) as any
+  feedKeys(made)
+  assert.deepEqual([made.user.name, made.user.role, made.user.personaType, made.user.home, made.user.orgId], ['Marta Rivera', 'caregiver', 'caregiver', '/app', null])
+  const cookie = res.headers.get('set-cookie')!.split(';')[0]
+  assert.equal(cookie, `vp_user=${made.user.id}`)
+  assert.equal((await call('GET', '/demo/me', undefined, cookie)).json.user.id, made.user.id)
+  assert.deepEqual((await call('GET', '/patients/mine', undefined, cookie)).json.patients, []) // nobody else's patients
+  assert.ok((await call('GET', '/demo/personas')).json.personas.some((p: any) => p.id === made.user.id))
+
+  const saved = await call('POST', '/patients', { isSelf: true, consent: true, profile: { displayName: 'Marta', phone: '', municipality: 'CAGUAS', zone: null, needs: [{ kind: 'cpap', batteryHours: null }] } }, cookie)
+  assert.equal(saved.status, 201)
+  assert.deepEqual((await call('GET', '/patients/mine', undefined, cookie)).json.patients.map((p: any) => [p.id, p.isSelf]), [[saved.json.id, true]])
+  assert.equal((await call('GET', '/demo/me', undefined, cookie)).json.user.personaType, 'self-patient')
+
+  for (const name of ['', 'x', 'y'.repeat(81)]) assert.equal((await call('POST', '/demo/caregivers', { name })).status, 400)
+
+  // The rehearsal reset removes the new persona and their patient; their cookie then means nobody.
+  assert.equal((await call('POST', '/demo/reset', undefined, ADMIN)).status, 200)
+  assert.equal((await call('GET', '/demo/me', undefined, cookie)).json.user, null)
+  assert.equal((db.prepare('SELECT count(*) n FROM users').get() as { n: number }).n, 7)
+  assert.equal((db.prepare('SELECT count(*) n FROM patients').get() as { n: number }).n, 5)
+})

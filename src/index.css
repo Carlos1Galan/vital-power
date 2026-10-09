@@ -270,6 +270,21 @@ button.intake-link { border-color: transparent; text-decoration: underline; text
 .municipalities .check:hover { background: var(--action-tint); }
 .municipalities .check:has(input:checked) { background: var(--action-tint); font-weight: 700; }
 .org-submit { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; max-width: none; }
+.signup-form { max-width: 40rem; }
+/* Registration page: three choices, then the form for the one picked. */
+.register-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--space-2); margin: var(--space-3) 0; }
+.choice { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; min-height: 8rem; padding: var(--space-3); text-align: left; background: var(--surface); color: var(--ink);
+  border: 2px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); }
+.choice strong { font: 600 1.45rem/1.2 var(--font-display); }
+.choice span { font-weight: 400; color: var(--ink-soft); }
+.choice:hover:not(:disabled) { background: var(--surface); color: var(--ink); border-color: var(--action); box-shadow: var(--shadow-lift); transform: translateY(-3px); }
+.choice[aria-pressed='true'] { background: var(--action-tint); border-color: var(--action); }
+.choice[aria-pressed='true'] strong { color: var(--action-strong); }
+.register-form { animation: rise var(--normal) var(--ease-out) both; }
+.register-form h2 { margin-top: var(--space-3); }
+.join .lead { color: var(--ink-soft); font-size: 1.2rem; max-width: 62ch; margin-bottom: var(--space-3); }
+.join .area-links { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.join .area-links a:nth-child(2) { background: var(--night-soft); }
 .org-done { max-width: 46rem; border-left-color: var(--live); animation: rise var(--normal) var(--ease-out) both; }
 
 .fine-print { color: var(--ink-soft); font-size: var(--text-small); }

@@ -1,7 +1,6 @@
 import { useT, useLang, type TextKey } from './i18n.ts'
 import { useEffect, useState } from 'react'
 import { api } from './api.ts'
-import OrgForm from './OrgForm.tsx'
 
 type Outage = { label: TextKey; without: number; regions: { name: string; without: number }[] }
 
@@ -48,8 +47,7 @@ export default function Landing() {
         <p className="lead">{t('landing.lead')}</p>
         <p className="hero-actions">
           <a className="button" href="/org">{t('landing.callList')}</a>
-          <a className="button quiet" href="/app">{t('landing.registerPatient')}</a>
-          <a className="button quiet" href="#register">{t('landing.registerOrg')}</a>
+          <a className="button quiet" href="/register">{t('header.register')}</a>
         </p>
       </div>
       {outage && <aside className="live-panel" aria-label={t('landing.figures')}>
@@ -77,10 +75,14 @@ export default function Landing() {
       <p className="compare-line">{t('landing.howMany')} <em>{t('landing.whoFirst')}</em></p>
     </section>
 
-    <section className="register" id="register">
-      <h2>{t('landing.registerOrg')}</h2>
-      <p className="lead">{t('landing.registerNote')}</p>
-      <OrgForm />
+    <section className="join">
+      <h2>{t('register.title')}</h2>
+      <p className="lead">{t('register.lead')}</p>
+      <div className="area-links">
+        <a href="/register?as=patient"><strong>{t('register.patient')}</strong><span>{t('register.patientNote')}</span></a>
+        <a href="/register?as=caregiver"><strong>{t('register.caregiver')}</strong><span>{t('register.caregiverNote')}</span></a>
+        <a href="/register?as=organization"><strong>{t('register.organization')}</strong><span>{t('register.organizationNote')}</span></a>
+      </div>
     </section>
 
     <footer className="site-footer">

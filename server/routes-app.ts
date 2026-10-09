@@ -85,6 +85,7 @@ const aiBudget: MiddlewareHandler = async (c, next) => {
   await next()
 }
 const BriefingBody = z.object({ text: z.string().trim().min(1).max(4000).optional(), lang: z.enum(['es', 'en']).default('es') })
+const MAX_SIGNUPS = 50
 const NOT_CLAIMED = 'Solo la organización que tomó el caso puede hacer esto'
 
 // What seed.sql ships: the highest seeded id of each table, and each seeded organization's status.
@@ -94,7 +95,7 @@ const seeded = (() => {
   const rows = (table: string) => (new RegExp(`INSERT INTO ${table} [^;]*VALUES([^;]*);`).exec(sql)?.[1] ?? '').split('\n').map((line) => line.trim()).filter((line) => line.startsWith('('))
   const maxId = (table: string) => Math.max(0, ...rows(table).map((r) => Number(/^\((\d+)/.exec(r)?.[1] ?? 0)))
   const orgStatus = rows('organizations').map((r) => [Number(/^\((\d+)/.exec(r)?.[1]), /'(pending|approved|rejected)'\s*\)/.exec(r)?.[1] ?? 'pending'] as const)
-  return { patients: maxId('patients'), organizations: maxId('organizations'), orgStatus }
+  return { patients: maxId('patients'), organizations: maxId('organizations'), users: maxId('users'), orgStatus }
 })()
 
 type Checkin = { id: number; message: string; sentAt: string; replyText: string | null; replyAt: string | null; aiParsed: string | null; confirmedAt: string | null }
@@ -113,6 +114,15 @@ export const appRoutes = new Hono()
     if (!user) return c.json(withFeed({ error: 'Persona no encontrada' }), 404)
     setCookie(c, COOKIE, String(user.id), { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 60 * 60 * 24 * 7 })
     return c.json(withFeed({ user }))
+  })
+  // Caregiver sign-up, demo style: a name creates a caregiver persona and signs it in. No password, synthetic data only.
+  .post('/demo/caregivers', small, valid('json', z.object({ name: z.string().trim().min(2).max(80) })), (c) => {
+    // A ceiling keeps a stuck form or a script from filling the persona list.
+    if ((db.prepare('SELECT count(*) AS n FROM users').get() as { n: number }).n >= seeded.users + MAX_SIGNUPS)
+      return c.json(withFeed({ error: 'Hay demasiados perfiles de demostración. Pida a un administrador que reinicie la demostración.' }), 429)
+    const id = Number(db.prepare("INSERT INTO users (name, role, org_id) VALUES (?, 'caregiver', NULL)").run(c.req.valid('json').name).lastInsertRowid)
+    setCookie(c, COOKIE, String(id), { path: '/', httpOnly: true, sameSite: 'Lax', maxAge: 60 * 60 * 24 * 7 })
+    return c.json(withFeed({ user: persona(id)! }), 201)
   })
   .post('/demo/logout', (c) => {
     deleteCookie(c, COOKIE, { path: '/' })
@@ -294,7 +304,7 @@ export const appRoutes = new Hono()
     return c.json(withFeed({ id: row.id }))
   })
 
-  // Rehearsal reset (admin): back to the seeded patients and organizations, live mode, no cases in progress.
+  // Rehearsal reset (admin): back to the seeded patients, organizations and personas, live mode, no cases in progress.
   // Recorded LUMA readings are never touched: the replay depends on them.
   .post('/demo/reset', requireRole('admin'), (c) => {
     tx(() => {
@@ -305,6 +315,7 @@ export const appRoutes = new Hono()
         DELETE FROM patients WHERE id > ${seeded.patients};
         DELETE FROM org_municipalities WHERE org_id > ${seeded.organizations};
         DELETE FROM organizations WHERE id > ${seeded.organizations};
+        DELETE FROM users WHERE id > ${seeded.users};
         UPDATE checkins SET reply_text = NULL, reply_at = NULL, ai_parsed = NULL, confirmed_by = NULL, confirmed_at = NULL;
         UPDATE outage_events SET claimed_by_org_id = NULL, claimed_by = NULL, claimed_at = NULL,
           status = CASE WHEN status = 'confirmed' THEN 'possible' ELSE status END;

@@ -5,6 +5,7 @@ import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import Header from './Header.tsx'
 import Landing from './Landing.tsx'
+import Register from './Register.tsx'
 import Caregiver from './Caregiver.tsx'
 import Org from './Org.tsx'
 import Admin from './Admin.tsx'
@@ -99,7 +100,8 @@ export default function App() {
       </div>}
       {!ready ? (!error && <p>{t('common.loading')}</p>) : path === '/app' && user ? <Caregiver key={user.id} user={user} />
         : path === '/org' && user ? <Org key={user.id} user={user} />
-        : path === '/admin' && user ? <Admin key={user.id} user={user} /> : <Landing />}
+        : path === '/admin' && user ? <Admin key={user.id} user={user} />
+        : path === '/register' ? <Register /> : <Landing />}
     </main>
   </>
 }

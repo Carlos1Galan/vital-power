@@ -8,7 +8,7 @@ import Alerts from './Alerts.tsx'
 import Select, { components, type SingleValueProps } from 'react-select'
 import { selectStyles, type SelectOption } from './selectStyles.ts'
 
-const AREAS = [['/app', 'header.patients'], ['/org', 'header.organizations'], ['/admin', 'header.admin']] as const
+const AREAS = [['/app', 'header.patients'], ['/org', 'header.organizations'], ['/admin', 'header.admin'], ['/register', 'header.register']] as const
 const THEME_REVEAL_MS = 650
 const MARQUEE_PX_PER_SECOND = 28 // slow enough to read while it moves
 const MARQUEE_MOVING_SHARE = 0.64 // persona-slide in index.css moves for 32% of the cycle each way and rests in between

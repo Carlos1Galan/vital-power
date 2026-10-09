@@ -35,11 +35,12 @@ const VOICE_ERROR: Record<string, TextKey> = {
 }
 const emptyNeed = (): NeedRow => ({ kind: '', batteryHours: '' })
 
-export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolean; onCancel: () => void; onSaved: () => Promise<void> }) {
+// start: the person already said who the registration is for (at sign-up), so step 1 is skipped.
+export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf: boolean; start?: 'self' | 'other'; onCancel: () => void; onSaved: () => Promise<void> }) {
   const t = useT()
   const s = useServerText()
-  const [step, setStep] = useState(1)
-  const [isSelf, setIsSelf] = useState(false)
+  const [step, setStep] = useState(start ? 2 : 1)
+  const [isSelf, setIsSelf] = useState(start === 'self' && !hasSelf)
   const [transcript, setTranscript] = useState('')
   const [reviewedTranscript, setReviewedTranscript] = useState<string | null>(null)
   const [intakeId, setIntakeId] = useState<Extraction['intakeId']>()
@@ -207,8 +208,8 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       <button onClick={() => { setIsSelf(false); setStep(2) }}>{t('intake.forOther')}</button>
     </div>}
     {step === 2 && <div className="intake-fields">
-      <label>{t('intake.story')}
-        <textarea rows={6} maxLength={4000} disabled={busy} value={transcript} onChange={(ev) => setTranscript(ev.target.value)} placeholder={t('intake.storyExample')} />
+      <label>{t(isSelf ? 'intake.storySelf' : 'intake.story')}
+        <textarea rows={6} maxLength={4000} disabled={busy} value={transcript} onChange={(ev) => setTranscript(ev.target.value)} placeholder={t(isSelf ? 'intake.storySelfExample' : 'intake.storyExample')} />
       </label>
       {SpeechRecognition && <button className="quiet" disabled={busy} onClick={speak}>{listening ? t('intake.stop') : t('intake.speak')}</button>}
       <p className="muted" aria-live="polite">{listening ? t('intake.listening', { hearing }) : ''}</p>

@@ -24,7 +24,15 @@ export default function Caregiver({ user }: { user: Persona }) {
   const [checkins, setCheckins] = useState<Checkin[]>([])
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
-  const [intake, setIntake] = useState(false)
+  // /app?start=self|other comes from the sign-up form: open the registration with that choice already made.
+  const [start] = useState<'self' | 'other' | undefined>(() => {
+    const value = new URLSearchParams(location.search).get('start')
+    if (value !== 'self' && value !== 'other') return undefined
+    history.replaceState(null, '', location.pathname) // a reload should not reopen it
+    return value
+  })
+  const [intake, setIntake] = useState(start !== undefined)
+  const [fromSignup, setFromSignup] = useState(start !== undefined)
   const [saved, setSaved] = useState(false)
 
   const isPatient = user.personaType === 'self-patient'
@@ -60,7 +68,8 @@ export default function Caregiver({ user }: { user: Persona }) {
     await load()
   }
 
-  if (intake) return <Intake hasSelf={patients?.some((p) => p.isSelf) ?? false} onCancel={() => setIntake(false)} onSaved={async () => {
+  if (intake) return <Intake hasSelf={patients?.some((p) => p.isSelf) ?? false} start={fromSignup ? start : undefined} onCancel={() => { setIntake(false); setFromSignup(false) }} onSaved={async () => {
+    setFromSignup(false)
     setIntake(false)
     setSaved(true)
     await load()
@@ -78,6 +87,7 @@ export default function Caregiver({ user }: { user: Persona }) {
     {/* A patient who registered themself has nothing more to register here; caregivers and facility staff add people. */}
     {!(isPatient && patients?.some((p) => p.isSelf)) && <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>{isPatient ? t('caregiver.registerSelf') : t('caregiver.registerPerson')}</button></p>}
     <p aria-live="polite">{saved ? t('caregiver.saved') : ''}</p>
+    {patients?.length === 0 && <p className="card empty">{t('caregiver.noPatients')}</p>}
     {!patients ? !error && <p>{t('common.loading')}</p> : <ul className="patients">
       {patients.map((p) => {
         const [tone, label] = STATUS[p.outage === 'possible' && p.answered ? 'answered' : p.outage ?? 'none']
