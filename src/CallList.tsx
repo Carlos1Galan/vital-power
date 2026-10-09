@@ -12,6 +12,14 @@ const TIER_LABEL = { 1: 'Llamar ahora', 2: 'Llamar pronto', 3: 'Por confirmar' }
 export default function CallList({ user }: { user: Persona }) {
   const [events, setEvents] = useState<CallEvent[] | null>(null)
   const [openId, setOpenId] = useState<number | null>(null)
+
+  // An alert links to /org#caso-12: open that case.
+  useEffect(() => {
+    const fromHash = () => { const id = /^#caso-(\d+)$/.exec(location.hash)?.[1]; if (id) setOpenId(Number(id)) }
+    fromHash()
+    addEventListener('hashchange', fromHash)
+    return () => removeEventListener('hashchange', fromHash)
+  }, [])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -56,7 +64,7 @@ export default function CallList({ user }: { user: Persona }) {
     <ol className="call-list">
       {events.map((e, i) => {
         const mine = e.claimedByOrgId !== null && e.claimedByOrgId === user.orgId
-        return <li key={e.eventId} className={`call tier-${e.tier}`} style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}>
+        return <li key={e.eventId} id={`caso-${e.eventId}`} className={`call tier-${e.tier}`} style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}>
           <div className="call-rank"><strong>{i + 1}</strong><span>{TIER_LABEL[e.tier]}</span></div>
           <div className="call-body">
             <h2>{e.patientName}</h2>

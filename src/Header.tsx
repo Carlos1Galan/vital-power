@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
+import Alerts from './Alerts.tsx'
 import Select, { components, type SingleValueProps } from 'react-select'
 import { selectStyles, type SelectOption } from './selectStyles.ts'
 
@@ -133,6 +134,7 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
         components={{ SingleValue: SlidingValue }}
       />
     </label>
+    <Alerts user={user} />
     <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
   </header>
 }

@@ -65,7 +65,7 @@ export default function Caregiver({ user }: { user: Persona }) {
     <h1>Hola, {user.name}</h1>
     {error && <p role="alert" className="connection-error">{error}</p>}
 
-    <h2>Avisos</h2>
+    <h2 id="avisos">Avisos</h2>
     {checkins.map((c) => <CheckinCard key={c.id} checkin={c} onReply={reply} />)}
     {!checkins.length && <p className="card empty" aria-live="polite">{sent ? 'Gracias. Su respuesta llegó al equipo de coordinación.' : 'No tiene avisos pendientes.'}</p>}
 
