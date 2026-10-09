@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { db, setting } from './db.ts'
+import { db, setSetting, setting } from './db.ts'
 import { processTownsReading } from './events.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
 
@@ -44,4 +44,39 @@ export async function pollOnce(f: typeof fetch = fetch) {
   // In replay the live feed is still recorded, but only the replayed readings drive events.
   if (setting('mode') === 'live') processTownsReading(townsId)
   return { regionsId, townsId }
+}
+
+// Replay walks the recorded live towns readings in id order. The cursor is the reading being shown.
+const nextRecorded = (afterId: number) =>
+  (db.prepare("SELECT id FROM luma_readings WHERE source = 'live' AND endpoint = 'towns' AND ok = 1 AND id > ? ORDER BY id LIMIT 1")
+    .get(afterId) as { id: number } | undefined)?.id ?? null
+
+// false = fromReadingId is not a recorded towns reading.
+export function setMode(mode: 'live' | 'replay', fromReadingId?: number) {
+  if (mode === 'live') {
+    setSetting('mode', 'live')
+    return true
+  }
+  const start = nextRecorded((fromReadingId ?? 1) - 1)
+  if (!start || (fromReadingId && start !== fromReadingId)) return false
+  setSetting('mode', 'replay')
+  setSetting('replay_cursor', String(start))
+  processTownsReading(start)
+  return true
+}
+
+// One replay step: the next recorded reading drives events. null = end of the recording.
+export function replayStep() {
+  const next = nextRecorded(Number(setting('replay_cursor')))
+  if (next) {
+    setSetting('replay_cursor', String(next))
+    processTownsReading(next)
+  }
+  return next
+}
+
+export function startPoller() {
+  const tick = () => pollOnce().catch((e) => console.error('poll failed', e))
+  tick()
+  return setInterval(tick, POLL_MS)
 }

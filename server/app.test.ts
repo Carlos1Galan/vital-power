@@ -7,7 +7,7 @@ const call = async (method: string, path: string, body?: unknown) => {
   const res = await app.request(`/api${path}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: typeof body === 'string' ? body : body && JSON.stringify(body),
+    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   })
   return { status: res.status, json: (await res.json()) as any }
 }
