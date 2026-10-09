@@ -11,5 +11,6 @@ if (process.env.NODE_ENV === 'production') {
   root.get('*', serveStatic({ path: './dist/index.html' }))
 }
 
-serve({ fetch: root.fetch, port: Number(process.env.PORT ?? 3000) }, (i) => console.log(`API on :${i.port}`))
+// ponytail: loopback only while /call-list and /admin/* are unguarded; set HOST=0.0.0.0 once B's requireRole() guards them.
+serve({ fetch: root.fetch, port: Number(process.env.PORT ?? 3000), hostname: process.env.HOST ?? '127.0.0.1' }, (i) => console.log(`API on ${i.address}:${i.port}`))
 startPoller()
