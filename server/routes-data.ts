@@ -10,6 +10,12 @@ import { pollOnce, replayStep, setMode } from './luma.ts'
 // Every response carries { lastReadingAt, stale, mode }.
 const withFeed = <T extends object>(data: T) => ({ ...feedStatus(), ...data })
 
+// zod errors come back as { error: string } plus the feed, like every other response.
+const valid = <T extends 'json' | 'param', S extends z.ZodType>(target: T, schema: S) =>
+  zValidator(target, schema, (r, c) => {
+    if (!r.success) return c.json(withFeed({ error: `Entrada inválida: ${r.error.issues.map((i) => i.path.join('.') || i.message).join(', ')}` }), 400)
+  })
+
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: 'Body too large' }, 413) })
 
 const OrgBody = z.object({
@@ -33,7 +39,7 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ regions: p?.regions ?? [], totals: p?.totals ?? null, lumaTimestamp: p?.timestamp ?? null }))
   })
 
-  .post('/public/organizations', small, zValidator('json', OrgBody), (c) => {
+  .post('/public/organizations', small, valid('json', OrgBody), (c) => {
     const b = c.req.valid('json')
     let id = 0
     db.exec('BEGIN')
@@ -64,7 +70,7 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ readingId }))
   })
 
-  .put('/admin/mode', zValidator('json', z.object({ mode: z.enum(['live', 'replay']), fromReadingId: z.number().int().positive().optional() })), (c) => {
+  .put('/admin/mode', valid('json', z.object({ mode: z.enum(['live', 'replay']), fromReadingId: z.number().int().positive().optional() })), (c) => {
     const { mode, fromReadingId } = c.req.valid('json')
     if (!setMode(mode, fromReadingId)) return c.json(withFeed({ error: 'No recorded towns reading with that id' }), 400)
     return c.json(withFeed({}))
@@ -77,7 +83,7 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ organizations: rows.map((o) => ({ ...o, municipalities: JSON.parse(o.municipalities) as string[] })) }))
   })
 
-  .post('/admin/organizations/:id/review', zValidator('param', z.object({ id: z.coerce.number().int() })), zValidator('json', z.object({ decision: z.enum(['approve', 'reject']) })), (c) => {
+  .post('/admin/organizations/:id/review', valid('param', z.object({ id: z.coerce.number().int() })), valid('json', z.object({ decision: z.enum(['approve', 'reject']) })), (c) => {
     const { id } = c.req.valid('param')
     const status = c.req.valid('json').decision === 'approve' ? 'approved' : 'rejected'
     const changed = db.prepare(`UPDATE organizations SET status = ?, reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')

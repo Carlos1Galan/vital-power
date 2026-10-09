@@ -59,6 +59,8 @@ export function setMode(mode: 'live' | 'replay', fromReadingId?: number) {
   }
   const start = nextRecorded((fromReadingId ?? 1) - 1)
   if (!start || (fromReadingId && start !== fromReadingId)) return false
+  db.prepare(`UPDATE outage_events SET status = 'restored', closed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE mode = 'replay' AND status IN ('possible','confirmed')`).run() // a new replay run starts clean
   setSetting('mode', 'replay')
   setSetting('replay_cursor', String(start))
   processTownsReading(start)

@@ -35,7 +35,10 @@ export default function System() {
     setError('')
     try {
       const res = await fn()
-      if (!res.ok) setError(((await res.json()) as { error?: string }).error ?? `Error ${res.status}`)
+      if (!res.ok) {
+        const { error } = (await res.json().catch(() => ({}))) as { error?: unknown }
+        setError(typeof error === 'string' ? error : `Error ${res.status}`)
+      }
       await load()
     } finally {
       setBusy(false)
@@ -63,7 +66,7 @@ export default function System() {
         ) : (
           <>
             <input inputMode="numeric" placeholder="Lectura inicial (id)" value={fromId} onChange={(e) => setFromId(e.target.value)} />{' '}
-            <button disabled={busy} onClick={() => act(() => api.admin.mode.$put({ json: { mode: 'replay', fromReadingId: fromId ? Number(fromId) : undefined } }))}>
+            <button disabled={busy} onClick={() => (fromId && !/^[1-9]\d*$/.test(fromId) ? setError('El id de lectura debe ser un número entero') : act(() => api.admin.mode.$put({ json: { mode: 'replay', fromReadingId: fromId ? Number(fromId) : undefined } })))}>
               Iniciar replay
             </button>
           </>

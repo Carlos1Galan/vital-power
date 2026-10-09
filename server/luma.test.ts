@@ -57,3 +57,9 @@ test('the feed is stale when the last good reading is older than 2x the poll int
 test('no reading at all is stale', () => {
   assert.deepEqual(feedStatus(), { lastReadingAt: null, stale: true, mode: 'live' })
 })
+
+test('a failed regions call makes the feed stale even when towns worked', async () => {
+  await pollOnce(fake(() => new Response(regionsJson), () => new Response(townsJson)))
+  await pollOnce(fake(html(500), () => new Response(townsJson)))
+  assert.equal(feedStatus().stale, true)
+})

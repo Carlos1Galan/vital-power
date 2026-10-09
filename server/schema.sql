@@ -84,14 +84,15 @@ CREATE TABLE IF NOT EXISTS outage_events (
   opened_reading_id INTEGER NOT NULL REFERENCES luma_readings(id),
   closed_reading_id INTEGER REFERENCES luma_readings(id),
   status            TEXT NOT NULL DEFAULT 'possible' CHECK (status IN ('possible','confirmed','restored','false_alarm')),
+  mode              TEXT NOT NULL DEFAULT 'live' CHECK (mode IN ('live','replay')), -- replay events never touch live ones
   opened_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   closed_at         TEXT,
   claimed_by_org_id INTEGER REFERENCES organizations(id),
   claimed_by        INTEGER REFERENCES users(id),
   claimed_at        TEXT
 );
--- One open incident per patient.
-CREATE UNIQUE INDEX IF NOT EXISTS one_open_event ON outage_events(patient_id) WHERE status IN ('possible','confirmed');
+-- One open incident per patient per mode.
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_event ON outage_events(patient_id, mode) WHERE status IN ('possible','confirmed');
 
 CREATE TABLE IF NOT EXISTS checkins (
   id           INTEGER PRIMARY KEY,

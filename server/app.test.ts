@@ -102,3 +102,10 @@ test('replay walks stored readings in order and every response says replay', asy
 
   assert.equal((await call('PUT', '/admin/mode', { mode: 'live' })).json.mode, 'live')
 })
+
+test('validation errors come back as a string, so the UI can show them', async () => {
+  const r = await call('PUT', '/admin/mode', { mode: 'replay', fromReadingId: 0 })
+  assert.equal(r.status, 400)
+  assert.equal(typeof r.json.error, 'string')
+  feedKeys(r.json)
+})

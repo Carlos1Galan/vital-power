@@ -151,3 +151,19 @@ test('replay with a cursor that points at no reading is stale, not fresh', () =>
     db.exec("UPDATE settings SET value = 'live' WHERE key = 'mode'")
   }
 })
+
+test('replay and live events never touch each other', () => {
+  const setMode = (m: string) => db.prepare("UPDATE settings SET value = ? WHERE key = 'mode'").run(m)
+  processTownsReading(reading({ CAGUAS: z('URB VILLA BLANCA') })) // live
+  const [live] = openEvents()
+  assert.equal(claimEvent(live.id, 1, 2), true)
+  setMode('replay')
+  try {
+    processTownsReading(reading({ CAGUAS: [], 'SAN JUAN': z('HATO REY SUR') })) // replayed calm CAGUAS
+    assert.equal((db.prepare('SELECT status FROM outage_events WHERE id = ?').get(live.id) as { status: string }).status, 'possible')
+    assert.deepEqual(callList(admin).map((r) => r.municipality), ['SAN JUAN', 'SAN JUAN'])
+  } finally {
+    setMode('live')
+  }
+  assert.deepEqual(callList(admin).map((r) => r.municipality), ['CAGUAS', 'CAGUAS'])
+})
