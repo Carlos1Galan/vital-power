@@ -10,12 +10,12 @@ export default function Admin({ user }: { user: Persona }) {
   </section>
 
   return <section>
-    <span className="viewing-as">Viendo como: {user.name}{user.orgName ? ` · ${user.orgName}` : ''}</span>
-    <h1>Coordinación</h1>
+    <h1>Lista de llamadas</h1>
+    <p className="org-line">{user.orgName ?? 'Administración de la plataforma'}</p>
     <div className="tabs" aria-label="Vistas de coordinación">
-      <button aria-pressed={tab === 'calls'} onClick={() => setTab('calls')}>Lista de llamadas</button>
+      <button aria-pressed={tab === 'calls'} onClick={() => setTab('calls')}>Llamadas</button>
       {user.role === 'admin' && <button aria-pressed={tab === 'system'} onClick={() => setTab('system')}>Sistema</button>}
     </div>
-    {tab === 'system' && user.role === 'admin' ? <System /> : <p className="card empty">Lista de llamadas: próximamente.</p>}
+    {tab === 'system' && user.role === 'admin' ? <System /> : <p className="card empty">Aquí va a aparecer a quién llamar primero, y por qué.</p>}
   </section>
 }

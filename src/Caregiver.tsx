@@ -2,9 +2,8 @@ import type { Persona } from './App.tsx'
 
 export default function Caregiver({ user }: { user: Persona }) {
   return <section>
-    <span className="viewing-as">Viendo como: {user.name}</span>
-    <h1>Área de cuidadores</h1>
-    <p className="page-intro">Aquí registrará a sus pacientes y contestará los avisos cuando haya un apagón en su zona.</p>
-    <p className="card empty">Registro de pacientes y avisos: próximamente.</p>
+    <h1>Hola, {user.name}</h1>
+    <p className="page-intro">Aquí va a registrar a sus pacientes y a contestar los avisos cuando se vaya la luz en su zona.</p>
+    <p className="card empty">Todavía no hay nada que contestar. El registro de pacientes llega pronto.</p>
   </section>
 }

@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VitalPower Relay</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#14213d" />
+    <script>
+      // Set the theme before first paint: the saved choice, else the device setting.
+      var saved = null
+      try { saved = localStorage.getItem('vp_theme') } catch (e) { /* storage blocked: follow the device */ }
+      document.documentElement.dataset.theme = saved === 'dark' || saved === 'light' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    </script>
   </head>
   <body>
     <div id="root"></div>

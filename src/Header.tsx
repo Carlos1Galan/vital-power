@@ -12,6 +12,14 @@ const groups: [Persona['personaType'], string][] = [
 export default function Header({ personas, user, onSwitch }: { personas: Persona[]; user: Persona | null; onSwitch: (userId: number) => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState(false)
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = next
+    try { localStorage.setItem('vp_theme', next) } catch { /* private mode: the choice lasts for this page only */ }
+    setTheme(next)
+  }
 
   useEffect(() => {
     let active = true
@@ -35,15 +43,18 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
 
   return <header className="site-header">
     <div className="header-navigation">
-      <a className="brand" href="/">VitalPower Relay</a>
+      <a className="brand" href="/" aria-label="VitalPower Relay, inicio">
+        <img className="on-light" src="/vitalpower-logo-horizontal.svg" alt="" width={176} height={60} />
+        <img className="on-dark" src="/vitalpower-logo-horizontal-light.svg" alt="" width={176} height={60} />
+      </a>
       <nav aria-label="Áreas">
         <a href="/app" aria-current={location.pathname === '/app' ? 'page' : undefined}>Cuidadores</a>
         <a href="/admin" aria-current={location.pathname === '/admin' ? 'page' : undefined}>Coordinación</a>
       </nav>
     </div>
     <div className="feed-status" aria-live="polite">
-      {error ? <span className="warning">Sin conexión con el API</span> : status ? <>
-        <span className={`badge ${status.mode === 'replay' ? 'replay' : 'live'}`}>{status.mode === 'replay' ? 'REPLAY' : 'EN VIVO'}</span>
+      {error ? <span className="warning">No se pudo actualizar la información</span> : status ? <>
+        <span className={`badge ${status.mode === 'replay' ? 'replay' : 'live'}`}>{status.mode === 'replay' ? 'Replay' : 'En vivo'}</span>
         <span className="reading-time">{status.lastReadingAt ? <>Última lectura: <time dateTime={status.lastReadingAt}>{new Date(status.lastReadingAt).toLocaleTimeString('es-PR', { hour: 'numeric', minute: '2-digit' })}</time></> : 'Sin lecturas'}</span>
         {status.stale && <span className="badge stale">Datos desactualizados</span>}
       </> : <span>Cargando…</span>}
@@ -60,5 +71,6 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
         </optgroup>)}
       </select>
     </label>
+    <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
   </header>
 }
