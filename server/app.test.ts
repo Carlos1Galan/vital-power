@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { db } from './db.ts'
 import { app } from './app.ts'
 
-const call = async (method: string, path: string, body?: unknown) => {
+// Seeded personas: 1 admin, 2 coordinator of org 1 (CAGUAS, SAN JUAN), 3 coordinator of org 2 (CAGUAS), 5 caregiver.
+const call = async (method: string, path: string, body?: unknown, as: number | null = 1) => {
   const res = await app.request(`/api${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(as ? { Cookie: `vp_uid=${as}` } : {}) },
     body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
   })
   return { status: res.status, json: (await res.json()) as any }
@@ -108,4 +109,16 @@ test('validation errors come back as a string, so the UI can show them', async (
   assert.equal(r.status, 400)
   assert.equal(typeof r.json.error, 'string')
   feedKeys(r.json)
+})
+
+test('admin routes need the admin persona; the call list is scoped to the coordinator', async () => {
+  assert.equal((await call('GET', '/admin/readings', undefined, null)).status, 401)
+  assert.equal((await call('GET', '/admin/readings', undefined, 2)).status, 403)
+  assert.equal((await call('GET', '/call-list', undefined, 5)).status, 403) // caregivers never see the call list
+  const id = towns({ SAN_JUAN: [], CAGUAS: [], 'SAN JUAN': [{ zone: 'HATO REY SUR', area: 'SAN JUAN' }] })
+  await call('PUT', '/admin/mode', { mode: 'replay', fromReadingId: id })
+  assert.equal((await call('GET', '/call-list', undefined, 2)).json.events.length, 2) // org 1 covers SAN JUAN
+  assert.equal((await call('GET', '/call-list', undefined, 3)).json.events.length, 0) // org 2 only CAGUAS
+  assert.equal((await call('GET', '/call-list', undefined, 4)).json.events.length, 0) // org 3 is pending
+  await call('PUT', '/admin/mode', { mode: 'live' })
 })

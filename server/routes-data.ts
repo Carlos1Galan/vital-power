@@ -4,19 +4,20 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { db, setting } from './db.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
-import { callList, coverageGaps, feedStatus, type Viewer } from './events.ts'
+import { callList, coverageGaps, feedStatus } from './events.ts'
+import { requireRole } from './auth.ts'
 import { pollOnce, replayStep, setMode } from './luma.ts'
 
 // Every response carries { lastReadingAt, stale, mode }.
-const withFeed = <T extends object>(data: T) => ({ ...feedStatus(), ...data })
+export const withFeed = <T extends object>(data: T) => ({ ...feedStatus(), ...data })
 
 // zod errors come back as { error: string } plus the feed, like every other response.
-const valid = <T extends 'json' | 'param', S extends z.ZodType>(target: T, schema: S) =>
+export const valid = <T extends 'json' | 'param' | 'query', S extends z.ZodType>(target: T, schema: S) =>
   zValidator(target, schema, (r, c) => {
     if (!r.success) return c.json(withFeed({ error: `Entrada inválida: ${r.error.issues.map((i) => i.path.join('.') || i.message).join(', ')}` }), 400)
   })
 
-const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: 'Body too large' }, 413) })
+export const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: 'Body too large' }, 413) })
 
 const OrgBody = z.object({
   name: z.string().trim().min(2).max(120),
@@ -26,11 +27,10 @@ const OrgBody = z.object({
   message: z.string().trim().max(2000).default(''),
 })
 
-// ponytail: unguarded until B's auth.ts lands; then requireRole('admin') here and callList(currentUser(c)).
-const viewer: Viewer = { role: 'admin', orgId: null }
-
 // Owned by A: public status, organization registration, call list, admin.
 export const dataRoutes = new Hono()
+  .use('/admin/*', requireRole('admin'))
+
   .get('/public/status', (c) => {
     const replay = setting('mode') === 'replay'
     const r = db.prepare(`SELECT payload FROM luma_readings WHERE endpoint = 'regions' AND ok = 1 AND source = 'live'
@@ -56,7 +56,7 @@ export const dataRoutes = new Hono()
     return c.json(withFeed({ id, status: 'pending' as const }), 201)
   })
 
-  .get('/call-list', (c) => c.json(withFeed({ events: callList(viewer) })))
+  .get('/call-list', requireRole('coordinator', 'admin'), (c) => c.json(withFeed({ events: callList(c.var.user) })))
 
   .get('/admin/readings', (c) => {
     const readings = db.prepare(`SELECT id, fetched_at, source, endpoint, http_status, ok, error, luma_timestamp, length(payload) AS bytes
@@ -86,8 +86,8 @@ export const dataRoutes = new Hono()
   .post('/admin/organizations/:id/review', valid('param', z.object({ id: z.coerce.number().int() })), valid('json', z.object({ decision: z.enum(['approve', 'reject']) })), (c) => {
     const { id } = c.req.valid('param')
     const status = c.req.valid('json').decision === 'approve' ? 'approved' : 'rejected'
-    const changed = db.prepare(`UPDATE organizations SET status = ?, reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      WHERE id = ? AND kind = 'responder'`).run(status, id).changes
+    const changed = db.prepare(`UPDATE organizations SET status = ?, reviewed_by = ?, reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE id = ? AND kind = 'responder'`).run(status, c.var.user.id, id).changes
     if (!changed) return c.json(withFeed({ error: 'Organization not found' }), 404)
     return c.json(withFeed({ id, status }))
   })

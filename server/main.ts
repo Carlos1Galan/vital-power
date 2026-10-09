@@ -11,6 +11,7 @@ if (process.env.NODE_ENV === 'production') {
   root.get('*', serveStatic({ path: './dist/index.html' }))
 }
 
-// ponytail: loopback only while /call-list and /admin/* are unguarded; set HOST=0.0.0.0 once B's requireRole() guards them.
+// requireRole() guards /call-list and /admin/*, but any visitor can pick any persona (demo login): synthetic data only.
+// Loopback by default; set HOST=0.0.0.0 to show the demo on another device.
 serve({ fetch: root.fetch, port: Number(process.env.PORT ?? 3000), hostname: process.env.HOST ?? '127.0.0.1' }, (i) => console.log(`API on ${i.address}:${i.port}`))
 startPoller()
