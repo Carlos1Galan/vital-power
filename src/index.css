@@ -141,6 +141,58 @@ main > * { animation: rise var(--normal) var(--ease-out) both; }
 .tabs button:hover:not(:disabled) { background: none; color: var(--ink); border-color: var(--line-strong); box-shadow: none; transform: none; }
 .tabs button[aria-pressed='true'] { color: var(--ink); border-color: var(--action); }
 
+/* Shared bits for the app screens. */
+.muted { color: var(--ink-soft); }
+button.quiet { background: transparent; color: var(--action-strong); }
+button.quiet:hover:not(:disabled) { background: var(--action-tint); color: var(--action-strong); }
+textarea { font: inherit; width: 100%; padding: 0.6rem 0.7rem; border: 1.5px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); resize: vertical; }
+label { display: grid; gap: 0.3rem; font-weight: 600; }
+label.check { display: flex; align-items: center; gap: 0.6rem; }
+label.check input { min-height: 0; width: 1.4rem; height: 1.4rem; accent-color: var(--action); }
+.question { font: 600 clamp(1.5rem, 1.2rem + 1.2vw, 2rem)/1.2 var(--font-display); margin-bottom: var(--space-2); }
+blockquote { margin: 0 0 var(--space-2); padding: var(--space-2); border-left: 5px solid var(--action); background: var(--action-tint); border-radius: 0 var(--radius-small) var(--radius-small) 0; font-size: 1.25rem; }
+blockquote footer { margin-top: 0.4rem; font-size: var(--text-small); color: var(--ink-soft); }
+
+/* Caregiver: the check-in is the loudest thing on the page. */
+.checkin { max-width: 44rem; margin-bottom: var(--space-3); border-top: 6px solid var(--warn); animation: rise var(--normal) var(--ease-out) both; }
+.checkin form { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); justify-items: start; }
+.checkin form label { width: 100%; }
+.quick-replies, .confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); max-width: none; }
+.quick-replies button { min-height: 3.75rem; padding-inline: 1.6rem; font-size: 1.25rem; }
+.patients { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
+.patients h3 { margin-bottom: var(--space-1); }
+.patients p { margin-bottom: 0.3rem; }
+.status { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 700; }
+.status::before { content: ''; width: 0.7rem; height: 0.7rem; border-radius: 50%; background: currentColor; }
+.status.ok { color: var(--live); }
+.status.warn { color: var(--warn); }
+.status.urgent { color: var(--urgent); }
+
+/* Coordinator call list: position and tier first, then who and why. */
+.call-list { display: grid; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
+.call { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); align-items: start; padding: var(--space-3); background: var(--surface);
+  border: 1px solid var(--line); border-left: 8px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); animation: rise var(--normal) var(--ease-out) both; }
+.call.tier-1 { border-left-color: var(--urgent); }
+.call.tier-2 { border-left-color: var(--warn); }
+.call-rank strong { display: block; font: 600 3rem/1 var(--font-display); }
+.call-rank span { font-weight: 700; }
+.tier-1 .call-rank { color: var(--urgent); }
+.tier-2 .call-rank { color: var(--warn); }
+.tier-3 .call-rank { color: var(--ink-soft); }
+.call h2 { margin: 0 0 0.2rem; font-size: 1.5rem; }
+.call-body p { margin-bottom: 0.3rem; }
+.call-place, .call-checkin { color: var(--ink-soft); font-size: var(--text-small); }
+.call-reasons { margin: 0.4rem 0; padding-left: 1.2rem; font-weight: 600; }
+.call-actions { display: grid; gap: var(--space-1); justify-items: stretch; min-width: 11rem; }
+.claimed { margin: 0; padding: 0.5rem 0.8rem; border-radius: var(--radius-small); background: var(--paper); border: 1px solid var(--line); font-weight: 600; text-align: center; }
+.claimed.mine { background: var(--action-tint); border-color: var(--action); color: var(--action-strong); }
+.call-detail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--space-4); margin-top: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); animation: rise var(--normal) var(--ease-out) both; }
+.call-detail .question { font-size: 1.3rem; }
+.outcome-form { display: grid; gap: var(--space-2); justify-items: start; }
+.outcome-form label, .outcome-form input:not([type=checkbox]) { width: 100%; }
+.outcome { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 46rem) { .call { grid-template-columns: 1fr; } .call-rank { display: flex; align-items: baseline; gap: var(--space-2); } }
+
 /* Landing (English, for judges and partners). The hero is a full-width night band with the live LUMA figure. */
 .landing { margin-top: calc(var(--space-section) * -1); }
 .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 1fr); gap: var(--space-4); align-items: center;

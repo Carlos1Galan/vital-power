@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Persona } from './App.tsx'
 import System from './System.tsx'
+import CallList from './CallList.tsx'
 
 export default function Admin({ user }: { user: Persona }) {
   const [tab, setTab] = useState<'calls' | 'system'>('calls')
@@ -16,6 +17,6 @@ export default function Admin({ user }: { user: Persona }) {
       <button aria-pressed={tab === 'calls'} onClick={() => setTab('calls')}>Llamadas</button>
       {user.role === 'admin' && <button aria-pressed={tab === 'system'} onClick={() => setTab('system')}>Sistema</button>}
     </div>
-    {tab === 'system' && user.role === 'admin' ? <System /> : <p className="card empty">Aquí va a aparecer a quién llamar primero, y por qué.</p>}
+    {tab === 'system' && user.role === 'admin' ? <System /> : <CallList user={user} />}
   </section>
 }
