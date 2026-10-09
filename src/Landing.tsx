@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api.ts'
+import OrgForm from './OrgForm.tsx'
 
 type Outage = { label: string; without: number; regions: { name: string; without: number }[] }
 
@@ -34,7 +35,6 @@ export default function Landing() {
     return () => { active = false }
   }, [])
 
-  // Organization registration form comes later.
   return <article className="landing" lang="en">
     <section className="hero">
       <div className="hero-text">
@@ -43,6 +43,7 @@ export default function Landing() {
         <p className="hero-actions">
           <a className="button" href="/admin">See the call list</a>
           <a className="button quiet" href="/app">Register a patient</a>
+          <a className="button quiet" href="#register">Register your organization</a>
         </p>
       </div>
       {outage && <aside className="live-panel" aria-label="Live outage figures from LUMA">
@@ -62,6 +63,12 @@ export default function Landing() {
         <li><h3>Coordinators call the most urgent first</h3><p>The call list is ranked by fixed rules, and every person on it comes with the reason they are there.</p></li>
       </ol>
       <p className="fine-print">This is a demo. All patient information is fictional.</p>
+    </section>
+
+    <section className="register" id="register">
+      <h2>Register your organization</h2>
+      <p className="lead">Health plans, municipal emergency offices, clinics and equipment suppliers can sign up to receive the call list for the municipalities they serve. The AI never decides who goes first: the order comes from fixed rules, and a person confirms every step.</p>
+      <OrgForm />
     </section>
 
     <footer className="site-footer">

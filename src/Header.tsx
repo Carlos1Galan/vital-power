@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
 
+const THEME_REVEAL_MS = 650
 type Status = InferResponseType<typeof api.public.status.$get>
 const groups: [Persona['personaType'], string][] = [
   ['caregiver', 'Cuidador/a'], ['facility-staff', 'Personal de hogar'], ['self-patient', 'Paciente'],
@@ -14,11 +16,32 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
   const [error, setError] = useState(false)
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    document.documentElement.dataset.theme = next
-    try { localStorage.setItem('vp_theme', next) } catch { /* private mode: the choice lasts for this page only */ }
-    setTheme(next)
+  // The new theme opens as a circle from the button. A colour fade would pass text and background through
+  // the same grey halfway; a reveal keeps every pixel fully in one theme. No View Transitions support or
+  // reduced motion: the switch is instant.
+  const toggleTheme = (ev: MouseEvent<HTMLButtonElement>) => {
+    const root = document.documentElement
+    const apply = () => {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark' // read at apply time, so two quick presses toggle twice
+      root.dataset.theme = next
+      try { localStorage.setItem('vp_theme', next) } catch { /* private mode: the choice lasts for this page only */ }
+      flushSync(() => setTheme(next)) // the snapshot of the new page must already show the new label
+    }
+    if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return apply()
+    const box = ev.currentTarget.getBoundingClientRect()
+    const x = box.left + box.width / 2, y = box.top + box.height / 2
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
+    // Hover and focus colour transitions would otherwise run inside the revealed page and blur its contrast.
+    root.classList.add('theme-switching')
+    const transition = document.startViewTransition(apply)
+    const done = () => root.classList.remove('theme-switching')
+    transition.finished.then(done, done)
+    transition.ready.then(() => {
+      root.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration: THEME_REVEAL_MS, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', pseudoElement: '::view-transition-new(root)' },
+      )
+    }).catch(() => { /* transition skipped (tab hidden, another one started): the theme is already applied */ })
   }
 
   useEffect(() => {
