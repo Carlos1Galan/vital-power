@@ -116,6 +116,7 @@ time, .live-number, .live-panel li span:last-child { font-variant-numeric: tabul
 select, input, button { font: inherit; }
 select, input { min-height: 2.75rem; padding: 0.4rem 0.7rem; border: 1.5px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); max-width: 100%; transition: border-color var(--fast), box-shadow var(--fast); }
 select:hover, input:hover { border-color: var(--action); }
+.persona-switcher .persona-select { width: min(22rem, 78vw); font-size: var(--text-small); font-weight: 600; }
 /* A field inside its label fills the label and no more: a select otherwise grows to its longest option and spills into the next column. */
 label { min-width: 0; }
 label > input:not([type=checkbox], [type=radio]), label > select, label > textarea { width: 100%; min-width: 0; }
