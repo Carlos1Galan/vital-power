@@ -73,6 +73,7 @@ const COVERED_BY = `SELECT om.municipality FROM org_municipalities om JOIN organ
 export function claimEvent(eventId: number, orgId: number, userId: number) {
   return db.prepare(`UPDATE outage_events SET claimed_by_org_id = :orgId, claimed_by = :userId, claimed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     WHERE id = :eventId AND claimed_by_org_id IS NULL AND status IN ('possible','confirmed')
+      AND mode = (SELECT value FROM settings WHERE key = 'mode') -- only what the call list shows
       AND (SELECT municipality FROM patients WHERE id = outage_events.patient_id) IN (${COVERED_BY})`)
     .run({ eventId, orgId, userId }).changes > 0
 }

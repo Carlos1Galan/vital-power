@@ -167,3 +167,14 @@ test('replay and live events never touch each other', () => {
   }
   assert.deepEqual(callList(admin).map((r) => r.municipality), ['CAGUAS', 'CAGUAS'])
 })
+
+test('only events of the current mode can be claimed', () => {
+  db.exec("UPDATE settings SET value = 'replay' WHERE key = 'mode'")
+  try {
+    processTownsReading(reading({ CAGUAS: z('URB VILLA BLANCA') })) // replay event
+  } finally {
+    db.exec("UPDATE settings SET value = 'live' WHERE key = 'mode'")
+  }
+  const [e] = openEvents()
+  assert.equal(claimEvent(e.id, 1, 2), false) // hidden from the live call list
+})
