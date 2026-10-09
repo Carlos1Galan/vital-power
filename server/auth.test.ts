@@ -29,7 +29,7 @@ test('demo personas list the seven seeded personas with types, organizations and
   assert.deepEqual(json.personas.map((p: any) => p.personaType), ['admin', 'coordinator', 'coordinator', 'coordinator', 'caregiver', 'facility-staff', 'self-patient'])
   assert.equal(json.personas[3].orgStatus, 'pending')
   for (const p of json.personas) {
-    assert.equal(p.home, p.role === 'caregiver' ? '/app' : '/admin')
+    assert.equal(p.home, { caregiver: '/app', coordinator: '/org', admin: '/admin' }[p.role as 'caregiver' | 'coordinator' | 'admin'])
     assert.equal(typeof p.name, 'string')
     assert.equal(p.orgName === null, p.orgId === null)
     assert.equal(p.orgStatus === null, p.orgId === null)

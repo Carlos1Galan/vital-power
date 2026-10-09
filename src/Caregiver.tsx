@@ -22,6 +22,8 @@ export default function Caregiver({ user }: { user: Persona }) {
   const [intake, setIntake] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  const isPatient = user.personaType === 'self-patient'
+
   const load = useCallback(async () => {
     try {
       const [p, c] = await Promise.all([api.patients.mine.$get(), api.checkins.pending.$get()])
@@ -67,8 +69,9 @@ export default function Caregiver({ user }: { user: Persona }) {
     {checkins.map((c) => <CheckinCard key={c.id} checkin={c} onReply={reply} />)}
     {!checkins.length && <p className="card empty" aria-live="polite">{sent ? 'Gracias. Su respuesta llegó al equipo de coordinación.' : 'No tiene avisos pendientes.'}</p>}
 
-    <h2>{user.personaType === 'self-patient' ? 'Mi registro' : 'Mis pacientes'}</h2>
-    <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>Registrar a una persona</button></p>
+    <h2>{isPatient ? 'Mi registro' : 'Mis pacientes'}</h2>
+    {/* A patient who registered themself has nothing more to register here; caregivers and facility staff add people. */}
+    {!(isPatient && patients?.some((p) => p.isSelf)) && <p><button disabled={!patients} onClick={() => { setSaved(false); setIntake(true) }}>{isPatient ? 'Registrarme' : 'Registrar a una persona'}</button></p>}
     <p aria-live="polite">{saved ? 'Registro guardado.' : ''}</p>
     {!patients ? !error && <p>Cargando…</p> : <ul className="patients">
       {patients.map((p) => {

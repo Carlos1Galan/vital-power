@@ -41,7 +41,7 @@ export default function Landing() {
         <h1>Know who to call first when the power goes out.</h1>
         <p className="lead">VitalPower Relay helps care teams in Puerto Rico reach the people who depend on electricity for medical equipment, starting with whoever has the least time.</p>
         <p className="hero-actions">
-          <a className="button" href="/admin">See the call list</a>
+          <a className="button" href="/org">See the call list</a>
           <a className="button quiet" href="/app">Register a patient</a>
           <a className="button quiet" href="#register">Register your organization</a>
         </p>

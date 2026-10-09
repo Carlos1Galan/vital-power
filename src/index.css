@@ -271,6 +271,17 @@ button.intake-link { border-color: transparent; text-decoration: underline; text
 
 /* A's System tab: readable tables without touching its markup. */
 .system { overflow-x: auto; }
+.system > header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+/* Rows of controls: even gaps and one height, so wrapped buttons never touch. */
+.system p:has(> button) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); max-width: none; }
+.system input { height: 3rem; }
+.system [role=alert] { padding: var(--space-2); background: var(--warn-tint); border-left: 6px solid var(--warn); border-radius: var(--radius-small); }
+.system ul { display: grid; gap: var(--space-1); padding: 0; list-style: none; }
+.system li { padding: var(--space-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-small); }
+.system li p { margin: 0.4rem 0; color: var(--ink-soft); }
+.system li button { margin: var(--space-1) 0 0 var(--space-1); }
+.system li button:first-of-type { margin-left: var(--space-2); }
+.system li button:last-of-type:not(:first-of-type) { background: transparent; color: var(--action-strong); }
 .system table { width: 100%; border-collapse: collapse; font-size: var(--text-small); background: var(--surface); }
 .system th, .system td { padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); text-align: left; }
 .system th { font-weight: 700; color: var(--ink-soft); border-bottom-color: var(--line-strong); }

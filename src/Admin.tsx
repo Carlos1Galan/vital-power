@@ -3,20 +3,18 @@ import type { Persona } from './App.tsx'
 import System from './System.tsx'
 import CallList from './CallList.tsx'
 
+// Platform admin view (/admin): A's System screen plus every open case on the island.
+// The admin only watches the cases: claiming, confirming and briefing belong to the organizations.
 export default function Admin({ user }: { user: Persona }) {
-  const [tab, setTab] = useState<'calls' | 'system'>('calls')
-  if (user.role === 'coordinator' && user.orgStatus === 'pending') return <section className="card notice">
-    <h1>Su organización está pendiente de aprobación</h1>
-    <p>{user.orgName} podrá ver la lista de llamadas cuando un administrador apruebe el registro.</p>
-  </section>
+  const [tab, setTab] = useState<'system' | 'calls'>('system')
 
   return <section>
-    <h1>Lista de llamadas</h1>
-    <p className="org-line">{user.orgName ?? 'Administración de la plataforma'}</p>
-    <div className="tabs" aria-label="Vistas de coordinación">
-      <button aria-pressed={tab === 'calls'} onClick={() => setTab('calls')}>Llamadas</button>
-      {user.role === 'admin' && <button aria-pressed={tab === 'system'} onClick={() => setTab('system')}>Sistema</button>}
+    <h1>Administración</h1>
+    <p className="org-line">Lecturas de LUMA, organizaciones y todos los casos abiertos.</p>
+    <div className="tabs" aria-label="Vistas de administración">
+      <button aria-pressed={tab === 'system'} onClick={() => setTab('system')}>Sistema</button>
+      <button aria-pressed={tab === 'calls'} onClick={() => setTab('calls')}>Todos los casos</button>
     </div>
-    {tab === 'system' && user.role === 'admin' ? <System /> : <CallList user={user} />}
+    {tab === 'system' ? <System /> : <CallList user={user} />}
   </section>
 }

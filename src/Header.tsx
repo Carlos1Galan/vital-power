@@ -4,6 +4,7 @@ import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
 
+const AREAS = [['/app', 'Pacientes y cuidadores'], ['/org', 'Organizaciones'], ['/admin', 'Administración']] as const
 const THEME_REVEAL_MS = 650
 const MARQUEE_PX_PER_SECOND = 28 // slow enough to read while it moves
 const MARQUEE_MOVING_SHARE = 0.64 // persona-slide in index.css moves for 32% of the cycle each way and rests in between
@@ -89,8 +90,7 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
         <img className="on-dark" src="/vitalpower-logo-horizontal-light.svg" alt="" width={176} height={60} />
       </a>
       <nav aria-label="Áreas">
-        <a href="/app" aria-current={location.pathname === '/app' ? 'page' : undefined}>Cuidadores</a>
-        <a href="/admin" aria-current={location.pathname === '/admin' ? 'page' : undefined}>Coordinación</a>
+        {AREAS.map(([href, label]) => <a key={href} href={href} aria-current={location.pathname === href ? 'page' : undefined}>{label}</a>)}
       </nav>
     </div>
     <div className="feed-status" aria-live="polite">

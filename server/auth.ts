@@ -9,7 +9,7 @@ type Persona = CurrentUser & {
   orgName: string | null
   orgStatus: 'pending' | 'approved' | 'rejected' | null
   personaType: 'admin' | 'coordinator' | 'facility-staff' | 'self-patient' | 'caregiver'
-  home: '/app' | '/admin'
+  home: '/app' | '/org' | '/admin'
 }
 
 export function currentUser(c: Context): CurrentUser | null {
@@ -32,7 +32,7 @@ export function personas() {
         WHEN u.org_id IS NOT NULL THEN 'facility-staff'
         WHEN EXISTS (SELECT 1 FROM patients p WHERE p.caregiver_id = u.id AND p.is_self = 1) THEN 'self-patient'
         ELSE 'caregiver' END AS personaType,
-      CASE WHEN u.role = 'caregiver' THEN '/app' ELSE '/admin' END AS home
+      CASE u.role WHEN 'caregiver' THEN '/app' WHEN 'coordinator' THEN '/org' ELSE '/admin' END AS home
     FROM users u LEFT JOIN organizations o ON o.id = u.org_id ORDER BY u.id`).all() as Persona[]
 }
 
