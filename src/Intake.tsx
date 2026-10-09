@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import { errorText, MUNICIPALITIES, NEED_LABEL } from './lib.ts'
+import Select from 'react-select'
+import { selectStyles, type SelectOption } from './selectStyles.ts'
 
 type Extraction = InferResponseType<typeof api.intake.extract.$post, 200>
 type Zones = InferResponseType<typeof api.zones[':municipality']['$get'], 200>['zones']
@@ -221,22 +223,46 @@ export default function Intake({ hasSelf, onCancel, onSaved }: { hasSelf: boolea
       {automatic && <p className="muted">Esto lo llenamos automáticamente con lo que nos contó. Corrija lo que esté mal.</p>}
       <label>Nombre o cómo le llamamos<input required maxLength={80} value={name} onChange={(ev) => setName(ev.target.value)} /></label>
       <label>Teléfono<input maxLength={30} inputMode="tel" value={phone} onChange={(ev) => setPhone(ev.target.value)} /></label>
-      <label>Municipio<select required value={municipality} onChange={(ev) => {
-        initialZones.current = null
-        setZones([])
-        setZonesBusy(!!ev.target.value)
-        setMunicipality(ev.target.value as Municipality | '')
-      }}><option value="">Elija un municipio</option>{MUNICIPALITIES.map((m) => <option key={m}>{m}</option>)}</select></label>
-      <label>Zona o barrio<select value={zones.includes(zone) ? zone : ''} disabled={zonesBusy} onChange={(ev) => setZone(ev.target.value)}>
-        <option value="">No aparece o no sé</option>{zones.map((z) => <option key={z}>{z}</option>)}
-      </select></label>
+      <label htmlFor="intake-municipality">Municipio<Select<SelectOption, false>
+        inputId="intake-municipality"
+        classNamePrefix="vp-select"
+        required
+        options={MUNICIPALITIES.map((m) => ({ value: m, label: m }))}
+        value={municipality ? { value: municipality, label: municipality } : null}
+        onChange={(option) => {
+          initialZones.current = null
+          setZones([])
+          setZonesBusy(!!option)
+          setMunicipality((option?.value ?? '') as Municipality | '')
+      }} placeholder="Elija un municipio" isSearchable styles={selectStyles} /></label>
+      <label htmlFor="intake-zone">Zona o barrio<Select<SelectOption, false>
+        inputId="intake-zone"
+        classNamePrefix="vp-select"
+        options={zones.map((z) => ({ value: z, label: z }))}
+        value={zones.includes(zone) && zone ? { value: zone, label: zone } : null}
+        isDisabled={zonesBusy}
+        isLoading={zonesBusy}
+        onChange={(option) => setZone(option?.value ?? '')}
+        placeholder="No aparece o no sé"
+        isClearable
+        isSearchable
+        styles={selectStyles}
+      /></label>
       {zonesBusy ? <p className="muted" aria-live="polite">Cargando zonas…</p> : municipality && !zones.length && <p className="muted">Todavía no tenemos zonas para este municipio. Puede guardar sin zona.</p>}
       {zoneError && <p role="alert" className="connection-error">{zoneError}</p>}
       <h2 className="question">Equipo o medicamento que depende de la luz</h2>
       {needs.map((n, i) => <div className="need-row" key={i}>
-        <label>Equipo o medicamento {i + 1}<select required value={n.kind} onChange={(ev) => setNeeds(needs.map((row, index) => index === i ? { ...row, kind: ev.target.value as Kind | '' } : row))}>
-          <option value="">Elija uno</option>{Object.entries(NEED_LABEL).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
-        </select></label>
+        <label htmlFor={`intake-need-${i}`}>Equipo o medicamento {i + 1}<Select<SelectOption, false>
+          inputId={`intake-need-${i}`}
+          classNamePrefix="vp-select"
+          required
+          options={Object.entries(NEED_LABEL).map(([kind, label]) => ({ value: kind, label }))}
+          value={n.kind ? { value: n.kind, label: NEED_LABEL[n.kind] } : null}
+          onChange={(option) => setNeeds(needs.map((row, index) => index === i ? { ...row, kind: (option?.value ?? '') as Kind | '' } : row))}
+          placeholder="Elija uno"
+          isSearchable
+          styles={selectStyles}
+        /></label>
         <label>Horas de batería (si tiene)<input type="number" min={0} max={240} step={0.5} value={n.batteryHours} onChange={(ev) => setNeeds(needs.map((row, index) => index === i ? { ...row, batteryHours: ev.target.value } : row))} /></label>
         <button type="button" className="quiet" disabled={needs.length === 1} onClick={() => setNeeds(needs.filter((_, index) => index !== i))}>Quitar</button>
       </div>)}
