@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import type { InferResponseType } from 'hono/client'
 import { api } from './api.ts'
 import type { Persona } from './App.tsx'
-import Select from 'react-select'
+import Select, { components, type SingleValueProps } from 'react-select'
 import { selectStyles, type SelectOption } from './selectStyles.ts'
 
 const AREAS = [['/app', 'Pacientes y cuidadores'], ['/org', 'Organizaciones'], ['/admin', 'Administración']] as const
@@ -11,6 +11,30 @@ const THEME_REVEAL_MS = 650
 const MARQUEE_PX_PER_SECOND = 28 // slow enough to read while it moves
 const MARQUEE_MOVING_SHARE = 0.64 // persona-slide in index.css moves for 32% of the cycle each way and rests in between
 const personaLabel = (p: Persona) => `${p.name}${p.orgName ? ` · ${p.orgName}` : ''}${p.orgStatus === 'pending' ? ' (pendiente)' : ''}`
+// The chosen persona inside the searchable select. When the name is wider than the control it slides to its end
+// and back so all of it can be read (twice, then again on hover or focus; see persona-slide in index.css).
+function SlidingValue(props: SingleValueProps<SelectOption, false>) {
+  const box = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(0)
+  const label = props.data.label
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    const measure = () => setOverflow(Math.max(0, el.scrollWidth - el.clientWidth))
+    measure()
+    void document.fonts?.ready.then(measure) // a late font changes the text width without resizing the box
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [label])
+  const slide = { '--slide': `-${overflow}px`, '--slide-time': `${Math.max(5, (overflow / MARQUEE_PX_PER_SECOND) * 2 / MARQUEE_MOVING_SHARE)}s` } as CSSProperties
+  return <components.SingleValue {...props}>
+    <span className="persona-window" ref={box} title={label}>
+      <span className={overflow ? 'persona-name sliding' : 'persona-name'} style={slide}>{label}</span>
+    </span>
+  </components.SingleValue>
+}
+
 type Status = InferResponseType<typeof api.public.status.$get>
 const groups: [Persona['personaType'], string][] = [
   ['caregiver', 'Cuidador/a'], ['facility-staff', 'Personal de hogar'], ['self-patient', 'Paciente'],
@@ -20,21 +44,6 @@ const groups: [Persona['personaType'], string][] = [
 export default function Header({ personas, user, onSwitch }: { personas: Persona[]; user: Persona | null; onSwitch: (userId: number) => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState(false)
-  // How far the current persona's name overflows its box; above zero it slides back and forth so all of it can be read.
-  const nameBox = useRef<HTMLSpanElement>(null)
-  const [overflow, setOverflow] = useState(0)
-  const current = user ? personaLabel(user) : 'Elegir persona…'
-  useLayoutEffect(() => {
-    const box = nameBox.current
-    if (!box) return
-    const measure = () => setOverflow(Math.max(0, box.scrollWidth - box.clientWidth))
-    measure()
-    void document.fonts?.ready.then(measure) // a late font changes the text width without resizing the box
-    const observer = new ResizeObserver(measure)
-    observer.observe(box)
-    return () => observer.disconnect()
-  }, [current])
-
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 
   // The new theme opens as a circle from the button. A colour fade would pass text and background through
@@ -113,14 +122,15 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
           label,
           options: personas.filter((p) => p.personaType === type).map((p) => ({
             value: String(p.id),
-            label: `${p.name}${p.orgName ? ` · ${p.orgName}` : ''}${p.orgStatus === 'pending' ? ' (pendiente)' : ''}`,
+            label: personaLabel(p),
           })),
         })).filter((group) => group.options.length)}
-        value={user ? { value: String(user.id), label: `${user.name}${user.orgName ? ` · ${user.orgName}` : ''}${user.orgStatus === 'pending' ? ' (pendiente)' : ''}` } : null}
+        value={user ? { value: String(user.id), label: personaLabel(user) } : null}
         onChange={(option) => { if (option) onSwitch(Number(option.value)) }}
         placeholder="Elegir persona…"
         isSearchable
         styles={selectStyles}
+        components={{ SingleValue: SlidingValue }}
       />
     </label>
     <button className="theme-toggle" aria-pressed={theme === 'dark'} onClick={toggleTheme}>{theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</button>
