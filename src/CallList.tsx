@@ -65,7 +65,7 @@ export default function CallList({ user }: { user: Persona }) {
       {events.map((e, i) => {
         const mine = e.claimedByOrgId !== null && e.claimedByOrgId === user.orgId
         return <li key={e.eventId} id={`caso-${e.eventId}`} className={`call tier-${e.tier}`} style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}>
-          <div className="call-rank"><strong>{i + 1}</strong><span>{TIER_LABEL[e.tier]}</span></div>
+          <div className="call-rank"><strong>{i + 1}</strong><span>{e.tier === 3 && e.status === 'confirmed' ? 'Sin luz confirmada' : TIER_LABEL[e.tier]}</span></div>
           <div className="call-body">
             <h2>{e.patientName}</h2>
             <p className="call-place">{e.municipality} · {e.zone} · apagón detectado {ago(e.openedAt)}</p>
@@ -173,6 +173,7 @@ function BriefingSection({ event, initial, reload }: { event: Detail['event']; i
   const [text, setText] = useState(initial?.approvedText ?? initial?.draftText ?? '')
   const [busy, setBusy] = useState<'draft' | 'approve' | null>(null)
   const [error, setError] = useState('')
+  const [byHand, setByHand] = useState(false) // the coordinator writes it; also the way out when the automatic draft fails
 
   // Follow the server only when the stored briefing itself changed; a background refresh must not overwrite unsaved edits.
   const stored = initial ? `${initial.id}:${initial.approvedAt}` : ''
@@ -186,24 +187,29 @@ function BriefingSection({ event, initial, reload }: { event: Detail['event']; i
     setBusy('draft')
     setError('')
     try {
-      const res = await api.events[':id'].briefing.$post({ param: { id: String(event.id) } })
-      if (!res.ok) setError(await errorText(res))
+      const res = await api.events[':id'].briefing.$post({ param: { id: String(event.id) }, json: {} })
+      if (!res.ok) { setError(await errorText(res)); setByHand(true) }
       else {
         const data: InferResponseType<typeof api.events[':id']['briefing']['$post'], 201> = await res.json()
         setBriefing({ id: data.id, draftText: data.draftText, approvedText: null, approvedAt: null })
         setText(data.draftText)
       }
-    } catch { setError('No se pudo redactar el resumen. Intente de nuevo.') }
+    } catch { setError('No se pudo redactar el resumen. Puede escribirlo a mano.'); setByHand(true) }
     finally { setBusy(null) }
   }
   const approve = async () => {
-    if (!briefing) return
     setBusy('approve')
     setError('')
     try {
-      const res = await api.briefings[':id'].approve.$post({ param: { id: String(briefing.id) }, json: { text } })
+      let id = briefing?.id
+      if (id === undefined) { // written by hand: store it first, then approve it like any other
+        const made = await api.events[':id'].briefing.$post({ param: { id: String(event.id) }, json: { text } })
+        if (!made.ok) return setError(await errorText(made))
+        id = ((await made.json()) as InferResponseType<typeof api.events[':id']['briefing']['$post'], 201>).id
+      }
+      const res = await api.briefings[':id'].approve.$post({ param: { id: String(id) }, json: { text } })
       if (!res.ok) setError(await errorText(res))
-      else await reload()
+      else { setByHand(false); await reload() }
     } catch { setError('No se pudo aprobar el resumen. Intente de nuevo.') }
     finally { setBusy(null) }
   }
@@ -212,13 +218,14 @@ function BriefingSection({ event, initial, reload }: { event: Detail['event']; i
     <h3>Resumen para la llamada</h3>
     {error && <p role="alert" className="connection-error">{error}</p>}
     {event.mine ? <>
-      {briefing && <>
+      {(briefing || byHand) && <>
         <label>Resumen<textarea rows={10} maxLength={4000} value={text} disabled={busy !== null} onChange={(ev) => setText(ev.target.value)} /></label>
-        <p className="muted">Borrador automático. Revíselo y corríjalo antes de aprobar.</p>
+        <p className="muted">{briefing ? 'Borrador automático. Revíselo y corríjalo antes de aprobar.' : 'Escriba el resumen y lo que va a preguntar en la llamada.'}</p>
         <button disabled={busy !== null || !text.trim() || text.length > 4000} onClick={approve}>{busy === 'approve' ? 'Aprobando…' : 'Aprobar resumen'}</button>
-        <p className="muted" aria-live="polite">{briefing.approvedAt ? `Aprobado ${ago(briefing.approvedAt)}.` : ''}</p>
+        <p className="muted" aria-live="polite">{briefing?.approvedAt ? `Aprobado ${ago(briefing.approvedAt)}.` : ''}</p>
       </>}
       <button className={briefing ? 'quiet' : undefined} disabled={busy !== null} onClick={draft}>{busy === 'draft' ? 'Redactando…' : briefing ? 'Redactar de nuevo' : 'Redactar resumen'}</button>
+      {!briefing && !byHand && <button className="quiet" disabled={busy !== null} onClick={() => setByHand(true)}>Escribirlo a mano</button>}
     </> : <>
       <p className="muted">{event.claimedBy ? `Solo ${event.claimedBy} puede redactar el resumen.` : 'Tome el caso para redactar el resumen de la llamada.'}</p>
       {briefing?.approvedAt && <p className="briefing-text">{briefing.approvedText}</p>}

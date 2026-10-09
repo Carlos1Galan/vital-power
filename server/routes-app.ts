@@ -10,6 +10,7 @@ import { callList, claimEvent, feedStatus, knownZones, setEventStatus } from './
 import { MUNICIPALITIES } from './municipalities.ts'
 import type { NeedKind } from './priority.ts'
 import { ReplyReading, draftBriefing, extractProfile, readReply } from './ai.ts'
+import { readFileSync } from 'node:fs'
 
 const withFeed = <T extends object>(data: T) => ({ ...feedStatus(), ...data })
 const valid = <T extends 'json' | 'param', S extends z.ZodType>(target: T, schema: S) =>
@@ -83,7 +84,18 @@ const aiBudget: MiddlewareHandler = async (c, next) => {
   }
   await next()
 }
+const BriefingBody = z.object({ text: z.string().trim().min(1).max(4000).optional(), lang: z.enum(['es', 'en']).default('es') })
 const NOT_CLAIMED = 'Solo la organización que tomó el caso puede hacer esto'
+
+// What seed.sql ships: the highest seeded id of each table, and each seeded organization's status.
+// Read from the file itself so the reset keeps working when the seed changes.
+const seeded = (() => {
+  const sql = readFileSync(new URL('seed.sql', import.meta.url), 'utf8')
+  const rows = (table: string) => (new RegExp(`INSERT INTO ${table} [^;]*VALUES([^;]*);`).exec(sql)?.[1] ?? '').split('\n').map((line) => line.trim()).filter((line) => line.startsWith('('))
+  const maxId = (table: string) => Math.max(0, ...rows(table).map((r) => Number(/^\((\d+)/.exec(r)?.[1] ?? 0)))
+  const orgStatus = rows('organizations').map((r) => [Number(/^\((\d+)/.exec(r)?.[1]), /'(pending|approved|rejected)'\s*\)/.exec(r)?.[1] ?? 'pending'] as const)
+  return { patients: maxId('patients'), organizations: maxId('organizations'), orgStatus }
+})()
 
 type Checkin = { id: number; message: string; sentAt: string; replyText: string | null; replyAt: string | null; aiParsed: string | null; confirmedAt: string | null }
 type Outcome = { id: number; reached: number; outcome: string; nextAction: string | null; createdAt: string; coordinator: string }
@@ -115,10 +127,20 @@ export const appRoutes = new Hono()
   .get('/patients/mine', requireRole('caregiver'), (c) => {
     const u = currentUser(c)!
     const rows = db.prepare(`SELECT p.id, p.display_name AS name, p.municipality, p.zone, p.is_self AS isSelf, ${NEEDS} AS needs,
-        (SELECT e.status FROM outage_events e WHERE e.patient_id = p.id AND e.mode = :mode AND ${OPEN}) AS outage
-      FROM patients p WHERE ${SEES} ORDER BY p.id`).all({ uid: u.id, orgId: u.orgId, mode: setting('mode') }) as
-      { id: number; name: string; municipality: string; zone: string | null; isSelf: number; needs: string; outage: 'possible' | 'confirmed' | null }[]
-    return c.json(withFeed({ patients: rows.map((p) => ({ ...p, isSelf: !!p.isSelf, needs: JSON.parse(p.needs) as Need[] })) }))
+        e.status AS outage, o.name AS claimedBy,
+        (SELECT json_object('reached', co.reached, 'outcome', co.outcome, 'nextAction', co.next_action, 'createdAt', co.created_at)
+           FROM call_outcomes co WHERE co.event_id = e.id ORDER BY co.id DESC LIMIT 1) AS lastCall
+      FROM patients p
+      LEFT JOIN outage_events e ON e.patient_id = p.id AND e.mode = :mode AND ${OPEN}
+      LEFT JOIN organizations o ON o.id = e.claimed_by_org_id
+      WHERE ${SEES} ORDER BY p.id`).all({ uid: u.id, orgId: u.orgId, mode: setting('mode') }) as
+      { id: number; name: string; municipality: string; zone: string | null; isSelf: number; needs: string; outage: 'possible' | 'confirmed' | null; claimedBy: string | null; lastCall: string | null }[]
+    // What the family is told about the response: which organization took the case and the result of the last call.
+    type LastCall = { reached: number; outcome: string; nextAction: string | null; createdAt: string }
+    return c.json(withFeed({ patients: rows.map((p) => {
+      const call = p.lastCall ? JSON.parse(p.lastCall) as LastCall : null
+      return { ...p, isSelf: !!p.isSelf, needs: JSON.parse(p.needs) as Need[], lastCall: call && { ...call, reached: !!call.reached } }
+    }) }))
   })
   .get('/checkins/pending', requireRole('caregiver'), (c) => {
     const u = currentUser(c)!
@@ -238,17 +260,22 @@ export const appRoutes = new Hono()
   })
 
   // Briefing: an AI draft for the organization that claimed the event; a coordinator edits and approves it before use.
-  .post('/events/:id/briefing', requireRole('coordinator'), aiBudget, idParam, async (c) => {
+  .post('/events/:id/briefing', requireRole('coordinator'), aiBudget, small, idParam, valid('json', BriefingBody), async (c) => {
     const u = currentUser(c)!
     const ev = eventFor(u, c.req.valid('param').id)
     if (!ev) return c.json(withFeed({ error: 'Caso no encontrado' }), 404)
     if (ev.claimedByOrgId === null || ev.claimedByOrgId !== u.orgId) return c.json(withFeed({ error: NOT_CLAIMED }), 403)
+    const { text, lang } = c.req.valid('json')
+    if (text) { // written by the coordinator: no AI involved, and it still needs the approve step
+      const id = Number(db.prepare('INSERT INTO briefings (event_id, draft_text) VALUES (?, ?)').run(ev.id, text).lastInsertRowid)
+      return c.json(withFeed({ id, draftText: text }), 201)
+    }
     const reply = db.prepare('SELECT reply_text AS replyText FROM checkins WHERE event_id = ? ORDER BY id DESC LIMIT 1').get(ev.id) as { replyText: string | null } | undefined
     const reasons = callList(u).find((e) => e.eventId === ev.id)?.reasons ?? [] // the fixed rules explain the position; the AI only words it
     try {
       const draft = await draftBriefing({ patientName: ev.patientName, municipality: ev.municipality, zone: ev.zone, status: ev.status,
-        needs: JSON.parse(ev.needs) as Need[], reasons, reply: reply?.replyText ?? null })
-      const draftText = `${draft.briefing}\n\nGuion de llamada:\n${draft.callScript}`
+        needs: JSON.parse(ev.needs) as Need[], reasons, reply: reply?.replyText ?? null }, lang)
+      const draftText = `${draft.briefing}\n\n${lang === 'en' ? 'Call script' : 'Guion de llamada'}:\n${draft.callScript}`
       const id = Number(db.prepare('INSERT INTO briefings (event_id, draft_text) VALUES (?, ?)').run(ev.id, draftText).lastInsertRowid)
       return c.json(withFeed({ id, draftText }), 201)
     } catch (e) {
@@ -264,4 +291,25 @@ export const appRoutes = new Hono()
     if (row.claimedByOrgId === null || row.claimedByOrgId !== u.orgId) return c.json(withFeed({ error: NOT_CLAIMED }), 403)
     db.prepare(`UPDATE briefings SET approved_text = ?, approved_by = ?, approved_at = ${NOW} WHERE id = ?`).run(c.req.valid('json').text, u.id, row.id)
     return c.json(withFeed({ id: row.id }))
+  })
+
+  // Rehearsal reset (admin): back to the seeded patients and organizations, live mode, no cases in progress.
+  // Recorded LUMA readings are never touched: the replay depends on them.
+  .post('/demo/reset', requireRole('admin'), (c) => {
+    tx(() => {
+      db.exec(`DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM intakes;
+        DELETE FROM checkins WHERE event_id IN (SELECT id FROM outage_events WHERE mode = 'replay' OR patient_id > ${seeded.patients});
+        DELETE FROM outage_events WHERE mode = 'replay' OR patient_id > ${seeded.patients};
+        DELETE FROM patient_needs WHERE patient_id > ${seeded.patients};
+        DELETE FROM patients WHERE id > ${seeded.patients};
+        DELETE FROM org_municipalities WHERE org_id > ${seeded.organizations};
+        DELETE FROM organizations WHERE id > ${seeded.organizations};
+        UPDATE checkins SET reply_text = NULL, reply_at = NULL, ai_parsed = NULL, confirmed_by = NULL, confirmed_at = NULL;
+        UPDATE outage_events SET claimed_by_org_id = NULL, claimed_by = NULL, claimed_at = NULL,
+          status = CASE WHEN status = 'confirmed' THEN 'possible' ELSE status END;
+        UPDATE settings SET value = 'live' WHERE key = 'mode'`)
+      const status = db.prepare('UPDATE organizations SET status = ?, reviewed_by = NULL, reviewed_at = NULL WHERE id = ?')
+      for (const [id, value] of seeded.orgStatus) status.run(value, id)
+    })
+    return c.json(withFeed({ patients: seeded.patients }))
   })

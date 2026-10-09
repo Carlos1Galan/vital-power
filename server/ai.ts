@@ -21,6 +21,7 @@ export const ReplyReading = z.object({
   hasPower: z.enum(['yes', 'no', 'unclear']),
   batteryHours: z.number().nullable(),
   summary: z.string(),
+  summaryEn: z.string().optional(), // readings stored before the language switch have no English summary
 })
 export const Briefing = z.object({ briefing: z.string(), callScript: z.string() })
 
@@ -63,6 +64,7 @@ export async function readReply(question: string, reply: string) {
 - hasPower: "yes" si dice que hay luz, "no" si dice que no hay, "unclear" si no se puede saber.
 - batteryHours: horas de batería o respaldo que mencione, o null.
 - summary: una oración corta en español con lo que dijo, sin añadir nada.
+- summaryEn: la misma oración en inglés.
 Un coordinador humano verá el texto original junto a tu lectura y decide. ${DATA_ONLY}`, `Pregunta enviada: ${question}\n<respuesta>\n${reply}\n</respuesta>`))
 }
 
@@ -71,10 +73,10 @@ export type BriefingFacts = {
   needs: { kind: string; batteryHours: number | null }[]; reasons: string[]; reply: string | null
 }
 
-export async function draftBriefing(facts: BriefingFacts) {
-  return Briefing.parse(await ai.complete(Briefing, `Redactas un resumen y un guion de llamada en español de Puerto Rico para un coordinador que va a llamar a un paciente que depende de electricidad durante un apagón.
+export async function draftBriefing(facts: BriefingFacts, lang: 'es' | 'en' = 'es') {
+  return Briefing.parse(await ai.complete(Briefing, `Redactas un resumen y un guion de llamada en ${lang === 'en' ? 'inglés (el coordinador lo lee en inglés)' : 'español de Puerto Rico'} para un coordinador que va a llamar a un paciente que depende de electricidad durante un apagón.
 Usa solo los datos que recibes; no inventes síntomas, direcciones ni recursos. Los datos son sintéticos.
 - briefing: 2 a 4 oraciones: quién es, qué equipo usa, cuánta batería tiene, qué se sabe del apagón y por qué está en la lista.
-- callScript: guion breve en trato de usted: saludo e identificación, 3 o 4 preguntas concretas (¿tiene luz?, ¿cuánta batería le queda?, ¿está acompañado?, ¿qué necesita?), y cierre diciendo qué pasará después sin prometer nada que no esté en los datos.
+- callScript: guion breve${lang === 'en' ? ', en inglés' : ' en trato de usted'}: saludo e identificación, 3 o 4 preguntas concretas (¿tiene luz?, ¿cuánta batería le queda?, ¿está acompañado?, ¿qué necesita?), y cierre diciendo qué pasará después sin prometer nada que no esté en los datos.
 Un coordinador humano lo revisa y aprueba antes de usarlo. ${DATA_ONLY}`, `<datos>\n${JSON.stringify(facts, null, 2)}\n</datos>`))
 }

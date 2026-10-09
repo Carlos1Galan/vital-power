@@ -91,13 +91,13 @@ export default function Header({ personas, user, onSwitch }: { personas: Persona
       }
     }
     void load()
-    const timer = setInterval(load, 30_000)
+    const timer = setInterval(load, 5_000) // a switch to replay must show here almost at once
     return () => { active = false; clearInterval(timer) }
   }, [])
 
   return <header className="site-header">
     <div className="header-navigation">
-      <a className="brand" href="/" aria-label="VitalPower Relay, inicio">
+      <a className="brand" href="/" aria-label="VitalPower, inicio">
         <img className="on-light" src="/vitalpower-logo-horizontal.svg" alt="" width={176} height={60} />
         <img className="on-dark" src="/vitalpower-logo-horizontal-light.svg" alt="" width={176} height={60} />
       </a>

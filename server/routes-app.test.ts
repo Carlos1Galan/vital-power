@@ -144,3 +144,39 @@ test('only the organization that claimed the event records the outcome', async (
   const { json } = await call('GET', `/events/${id}`, undefined, OME)
   assert.deepEqual(json.outcomes.map((o: any) => [o.reached, o.outcome, o.nextAction, o.coordinator]), [[true, 'Tiene batería para 2 horas', 'Llevar generador', 'Coordinador Emergencias']])
 })
+
+test('the caregiver sees who took the case and the result of the last call', async () => {
+  const before = (await call('GET', '/patients/mine', undefined, ANA)).json.patients[0]
+  assert.deepEqual([before.claimedBy, before.lastCall], [null, null])
+  await call('POST', `/events/${eventOf(1)}/claim`, undefined, OME)
+  await call('POST', `/events/${eventOf(1)}/outcome`, { reached: true, outcome: 'Tiene batería para 2 horas', nextAction: 'Llevar generador' }, OME)
+  const after = (await call('GET', '/patients/mine', undefined, ANA)).json.patients
+  assert.equal(after[0].claimedBy, 'Oficina de Emergencias Demo')
+  assert.deepEqual([after[0].lastCall.reached, after[0].lastCall.outcome, after[0].lastCall.nextAction], [true, 'Tiene batería para 2 horas', 'Llevar generador'])
+  assert.deepEqual([after[1].claimedBy, after[1].lastCall], [null, null]) // her other patient has no case
+})
+
+test('the demo reset returns to the seeded patients and organizations and keeps the recorded readings', async () => {
+  const readings = (db.prepare('SELECT count(*) n FROM luma_readings').get() as { n: number }).n
+  db.exec("INSERT INTO patients (id, caregiver_id, display_name, municipality, zone, consent_at, consent_version) VALUES (90, 5, 'Ensayo', 'CAGUAS', 'URB VILLA BLANCA', 'x', 'v1'); INSERT INTO patient_needs (patient_id, kind) VALUES (90, 'cpap')")
+  db.exec("INSERT INTO organizations (id, name, kind, org_type, status) VALUES (90, 'Org de ensayo', 'responder', 'clinic', 'pending'); INSERT INTO org_municipalities VALUES (90, 'CAGUAS'); UPDATE organizations SET status = 'approved' WHERE id = 3")
+  await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
+  await call('POST', `/checkins/${checkinOf(1)}/confirm`, { hasPower: false }, PLAN)
+  await call('POST', `/events/${eventOf(1)}/claim`, undefined, PLAN)
+  await call('POST', `/events/${eventOf(1)}/outcome`, { reached: true, outcome: 'ok' }, PLAN)
+
+  assert.equal((await call('POST', '/demo/reset', undefined, PLAN)).status, 403)
+  const done = await call('POST', '/demo/reset', undefined, ADMIN)
+  assert.equal(done.status, 200)
+  feedKeys(done.json)
+  const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n
+  assert.equal(count('SELECT count(*) n FROM patients'), 5)
+  assert.equal(count('SELECT count(*) n FROM patient_needs WHERE patient_id = 90'), 0)
+  assert.equal(count('SELECT count(*) n FROM organizations'), 4)
+  assert.equal(count('SELECT count(*) n FROM call_outcomes'), 0)
+  assert.equal(count('SELECT count(*) n FROM luma_readings'), readings)
+  assert.equal((db.prepare('SELECT status FROM organizations WHERE id = 3').get() as { status: string }).status, 'pending')
+  const ev = db.prepare('SELECT status, claimed_by_org_id FROM outage_events WHERE id = ?').get(eventOf(1)) as { status: string; claimed_by_org_id: number | null }
+  assert.deepEqual({ ...ev }, { status: 'possible', claimed_by_org_id: null })
+  assert.equal((await call('GET', '/checkins/pending', undefined, ANA)).json.checkins.length, 1) // the check-in can be answered again
+})

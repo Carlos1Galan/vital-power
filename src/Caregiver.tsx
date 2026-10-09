@@ -81,6 +81,11 @@ export default function Caregiver({ user }: { user: Persona }) {
           <p className={`status ${tone}`}>{label}</p>
           <p className="muted">{p.municipality}{p.zone ? ` · ${p.zone}` : ''}</p>
           <p>{p.needs.map(needText).join(' · ')}</p>
+          {p.claimedBy && <p className="case-taken">{p.claimedBy} tomó su caso.</p>}
+          {p.lastCall && <p className="case-call">
+            <strong>{p.lastCall.reached ? 'Le llamaron' : 'Intentaron llamarle'} {ago(p.lastCall.createdAt)}.</strong> {p.lastCall.outcome}
+            {p.lastCall.nextAction ? ` Próximo paso: ${p.lastCall.nextAction}` : ''}
+          </p>}
         </li>
       })}
     </ul>}

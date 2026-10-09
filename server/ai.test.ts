@@ -144,12 +144,12 @@ test('an AI failure never loses the reply', async () => {
 test('only the organization that claimed the event drafts and approves the briefing', async () => {
   const id = eventOf(1)
   answer = { briefing: 'Don Ramón usa concentrador.', callScript: 'Buenas, le llamo de…' }
-  assert.equal((await call('POST', `/events/${id}/briefing`, undefined, PLAN)).status, 403) // unclaimed
+  assert.equal((await call('POST', `/events/${id}/briefing`, {}, PLAN)).status, 403) // unclaimed
   await call('POST', `/events/${id}/claim`, undefined, OME)
-  assert.equal((await call('POST', `/events/${id}/briefing`, undefined, PLAN)).status, 403)
+  assert.equal((await call('POST', `/events/${id}/briefing`, {}, PLAN)).status, 403)
   assert.equal(prompts.length, 0) // the AI is not even called for a refused request
 
-  const made = await call('POST', `/events/${id}/briefing`, undefined, OME)
+  const made = await call('POST', `/events/${id}/briefing`, {}, OME)
   assert.equal(made.status, 201)
   feedKeys(made.json)
   assert.equal(made.json.draftText, 'Don Ramón usa concentrador.\n\nGuion de llamada:\nBuenas, le llamo de…')
@@ -170,7 +170,7 @@ test('a failed briefing draft answers 502 and stores nothing', async () => {
   const id = eventOf(1)
   await call('POST', `/events/${id}/claim`, undefined, OME)
   answer = new Error('overloaded')
-  const r = await call('POST', `/events/${id}/briefing`, undefined, OME)
+  const r = await call('POST', `/events/${id}/briefing`, {}, OME)
   assert.equal(r.status, 502)
   assert.equal(typeof r.json.error, 'string')
   assert.equal(count('briefings'), 0)
@@ -184,4 +184,27 @@ test('AI drafts are limited per user per minute', async () => {
   for (let i = 0; i < 21; i++) statuses.push((await call('POST', '/intake/extract', body, HOGAR)).status)
   assert.deepEqual([statuses.slice(0, 20).every((s) => s === 200), statuses[20]], [true, 429])
   assert.equal((await call('POST', '/intake/extract', body, LUIS)).status, 200) // another user has their own budget
+})
+
+test('a coordinator can write the briefing by hand, with no AI call, and still has to approve it', async () => {
+  const id = eventOf(1)
+  await call('POST', `/events/${id}/claim`, undefined, OME)
+  answer = new Error('the AI must not be called')
+  const made = await call('POST', `/events/${id}/briefing`, { text: '  Llamar a Don Ramón y preguntar por la batería.  ' }, OME)
+  assert.equal(made.status, 201)
+  assert.equal(made.json.draftText, 'Llamar a Don Ramón y preguntar por la batería.')
+  assert.equal(prompts.length, 0)
+  assert.equal((await call('GET', `/events/${id}`, undefined, OME)).json.briefing.approvedText, null)
+  assert.equal((await call('POST', `/events/${id}/briefing`, { text: 'x' }, PLAN)).status, 403) // still only the claiming organization
+})
+
+const NL = String.fromCharCode(10)
+test('an AI briefing can be asked for in English', async () => {
+  const id = eventOf(1)
+  await call('POST', `/events/${id}/claim`, undefined, OME)
+  answer = { briefing: 'Don Ramón uses oxygen.', callScript: 'Hello, this is…' }
+  const made = await call('POST', `/events/${id}/briefing`, { lang: 'en' }, OME)
+  assert.equal(made.json.draftText, 'Don Ramón uses oxygen.' + NL + NL + 'Call script:' + NL + 'Hello, this is…')
+  assert.match(prompts[0].system, /inglés/)
+  assert.equal((await call('POST', `/events/${id}/briefing`, { lang: 'fr' }, OME)).status, 400)
 })

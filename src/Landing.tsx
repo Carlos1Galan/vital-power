@@ -27,19 +27,21 @@ export default function Landing() {
 
   useEffect(() => {
     let active = true
-    api.public.status.$get().then((r) => r.json()).then((s) => {
+    const load = () => api.public.status.$get().then((r) => r.json()).then((s) => {
       if (!active || !s.regions.length) return
       const regions = s.regions.map((r) => ({ name: r.name, without: r.totalClientsWithoutService })).sort((a, b) => b.without - a.without)
       setOutage({ label: s.mode === 'replay' ? 'Recorded outage (replay)' : s.stale ? 'Last reading from LUMA' : 'Right now in Puerto Rico', without: regions.reduce((n, r) => n + r.without, 0), regions: regions.slice(0, 3) })
     }).catch(() => {}) // the hero stands without the live figure
-    return () => { active = false }
+    void load()
+    const timer = setInterval(load, 30_000)
+    return () => { active = false; clearInterval(timer) }
   }, [])
 
   return <article className="landing" lang="en">
     <section className="hero">
       <div className="hero-text">
         <h1>Know who to call first when the power goes out.</h1>
-        <p className="lead">VitalPower Relay helps care teams in Puerto Rico reach the people who depend on electricity for medical equipment, starting with whoever has the least time.</p>
+        <p className="lead">VitalPower helps care teams in Puerto Rico reach the people who depend on electricity for medical equipment, starting with whoever has the least time.</p>
         <p className="hero-actions">
           <a className="button" href="/org">See the call list</a>
           <a className="button quiet" href="/app">Register a patient</a>
@@ -65,6 +67,12 @@ export default function Landing() {
       <p className="fine-print">This is a demo. All patient information is fictional.</p>
     </section>
 
+    <section className="compare">
+      <h2>How this is different</h2>
+      <p className="lead">HHS emPOWER counts the Medicare patients who depend on electricity, by ZIP code. It does not include people on Plan Vital or private insurance, and it does not say who they are.</p>
+      <p className="compare-line">emPOWER tells you how many. <em>VitalPower tells you who to call first.</em></p>
+    </section>
+
     <section className="register" id="register">
       <h2>Register your organization</h2>
       <p className="lead">Health plans, municipal emergency offices, clinics and equipment suppliers can sign up to receive the call list for the municipalities they serve. The AI never decides who goes first: the order comes from fixed rules, and a person confirms every step.</p>
@@ -74,7 +82,7 @@ export default function Landing() {
     <footer className="site-footer">
       <img className="on-light" src="/vitalpower-icon.svg" alt="" width={84} height={60} />
       <img className="on-dark" src="/vitalpower-icon-light.svg" alt="" width={84} height={60} />
-      <p>VitalPower Relay · Built for the Caribbean AI Summit hackathon, 2026.</p>
+      <p>VitalPower · Built for the Caribbean AI Summit hackathon, 2026.</p>
     </footer>
   </article>
 }
