@@ -10,7 +10,7 @@ import { readReplyLater } from './ai.ts'
 // Configuration lives in .env (see .env.example); with no Twilio credentials, nothing is sent.
 
 const env = process.env
-const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+const NOW = 'iso(now())'
 const OPEN = "e.status IN ('possible','confirmed')"
 const SANDBOX = 'whatsapp:+14155238886' // Twilio's shared WhatsApp sandbox number
 export const RECEIPT = 'Gracias, recibimos su respuesta. Un coordinador la revisará.'
@@ -31,7 +31,7 @@ type Outgoing = { eventId: number; phone: string; body: string; sentBy?: number 
 
 // The row is written before the network call, so an overlapping run never sends it twice. Returns the error, or null.
 export async function send({ eventId, phone, body, sentBy = null, template }: Outgoing) {
-  const id = db.prepare("INSERT INTO messages (event_id, dir, phone, body, sent_by) VALUES (?, 'out', ?, ?, ?)").run(eventId, phone, body, sentBy).lastInsertRowid
+  const { id } = await db.prepare("INSERT INTO messages (event_id, dir, phone, body, sent_by) VALUES (?, 'out', ?, ?, ?) RETURNING id").get(eventId, phone, body, sentBy) as { id: number }
   const form = new URLSearchParams({ From: env.TWILIO_WHATSAPP_FROM || SANDBOX, To: `whatsapp:+${phone}` })
   if (template) form.set('ContentSid', template)
   else form.set('Body', body)
@@ -46,24 +46,26 @@ export async function send({ eventId, phone, body, sentBy = null, template }: Ou
     })
     const json = await res.json() as { sid?: string; message?: string }
     if (!res.ok || !json.sid) throw new Error(json.message ?? `HTTP ${res.status}`)
-    db.prepare('UPDATE messages SET wa_id = ? WHERE id = ?').run(json.sid, id)
+    await db.prepare('UPDATE messages SET wa_id = ? WHERE id = ?').run(json.sid, id)
     return null
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
-    db.prepare('UPDATE messages SET error = ? WHERE id = ?').run(error, id)
+    await db.prepare('UPDATE messages SET error = ? WHERE id = ?').run(error, id)
     return error
   }
 }
 
 // New check-ins of open events (current mode) with no WhatsApp message yet. The 10-minute window keeps a restart,
-// or switching WhatsApp on, from messaging old cases. Every row is inserted before the first await (map runs each send
-// up to its fetch), so the next tick never picks the same check-in again.
+// or switching WhatsApp on, from messaging old cases. Each send writes its row before its fetch, so the next tick
+// (5 s later) never picks the same check-in again.
+// ponytail: the SELECT and the inserts are separate statements, so two sweeps running at the same moment could both send.
+// One process never overlaps them; claim the rows with one INSERT … SELECT … RETURNING once several instances sweep.
 export async function sendCheckins() {
   if (!whatsappOn()) return
-  const mode = setting('mode')
-  const rows = db.prepare(`SELECT e.id AS eventId, p.display_name AS name, p.phone, c.message FROM checkins c
+  const mode = await setting('mode')
+  const rows = await db.prepare(`SELECT e.id AS eventId, p.display_name AS name, p.phone, c.message FROM checkins c
       JOIN outage_events e ON e.id = c.event_id JOIN patients p ON p.id = e.patient_id
-    WHERE ${OPEN} AND e.mode = ? AND c.reply_at IS NULL AND c.sent_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')
+    WHERE ${OPEN} AND e.mode = ? AND c.reply_at IS NULL AND c.sent_at > iso(now() - interval '10 minutes')
       AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.event_id = e.id)`).all(mode) as { eventId: number; name: string; phone: string | null; message: string }[]
   await Promise.all(rows.flatMap((r) => {
     const phone = waNumber(r.phone)
@@ -78,19 +80,19 @@ const Incoming = z.object({
 })
 const Status = z.object({ MessageSid: z.string(), MessageStatus: z.string(), ErrorCode: z.string().optional(), ErrorMessage: z.string().optional() })
 
-function receive(m: z.infer<typeof Incoming>) {
+async function receive(m: z.infer<typeof Incoming>) {
   const from = m.From.replace(/\D/g, '')
   // The open case (current mode) this phone was last written about, or the one the reply quotes.
-  const target = db.prepare(`SELECT m.event_id AS eventId FROM messages m JOIN outage_events e ON e.id = m.event_id
+  const target = await db.prepare(`SELECT m.event_id AS eventId FROM messages m JOIN outage_events e ON e.id = m.event_id
     WHERE m.dir = 'out' AND m.phone = :from AND ${OPEN} AND e.mode = :mode
-    ORDER BY (:ctx IS NOT NULL AND m.wa_id = :ctx) DESC, m.id DESC LIMIT 1`)
-    .get({ from, ctx: m.OriginalRepliedMessageSid ?? null, mode: setting('mode') }) as { eventId: number } | undefined
+    ORDER BY (:ctx::text IS NOT NULL AND m.wa_id = :ctx) DESC, m.id DESC LIMIT 1`)
+    .get({ from, ctx: m.OriginalRepliedMessageSid ?? null, mode: await setting('mode') }) as { eventId: number } | undefined
   if (!target) return // e.g. the "join <code>" that enrolls the phone in the sandbox
   const body = m.Body.trim().slice(0, 1000) || '[adjunto]'
-  const added = db.prepare("INSERT OR IGNORE INTO messages (event_id, dir, phone, body, wa_id) VALUES (?, 'in', ?, ?, ?)").run(target.eventId, from, body, m.MessageSid).changes
-  if (!added) return // Twilio retried a delivery we already have
+  const { changes } = await db.prepare("INSERT INTO messages (event_id, dir, phone, body, wa_id) VALUES (?, 'in', ?, ?, ?) ON CONFLICT DO NOTHING").run(target.eventId, from, body, m.MessageSid)
+  if (!changes) return // Twilio retried a delivery we already have
   // The first reply answers the check-in as in the web app: the AI reads it, a coordinator confirms it.
-  const answered = db.prepare(`UPDATE checkins SET reply_text = ?, reply_at = ${NOW}
+  const answered = await db.prepare(`UPDATE checkins SET reply_text = ?, reply_at = ${NOW}
     WHERE id = (SELECT max(id) FROM checkins WHERE event_id = ?) AND reply_at IS NULL RETURNING id`).get(body, target.eventId) as { id: number } | undefined
   if (!answered) return
   readReplyLater(answered.id)
@@ -123,7 +125,7 @@ export const whatsappRoutes = new Hono()
     const form = await signedForm(c, 'webhook')
     if (!form) return c.text('Forbidden', 403)
     const m = Incoming.safeParse(form)
-    if (m.success) receive(m.data)
+    if (m.success) await receive(m.data)
     return twiml(c)
   })
   // Delivery reports, set per message through StatusCallback. A send can be accepted and then fail
@@ -133,6 +135,6 @@ export const whatsappRoutes = new Hono()
     if (!form) return c.text('Forbidden', 403)
     const s = Status.safeParse(form)
     if (s.success && (s.data.MessageStatus === 'failed' || s.data.MessageStatus === 'undelivered'))
-      db.prepare('UPDATE messages SET error = ? WHERE wa_id = ?').run(s.data.ErrorMessage || `Twilio error ${s.data.ErrorCode ?? s.data.MessageStatus}`, s.data.MessageSid)
+      await db.prepare('UPDATE messages SET error = ? WHERE wa_id = ?').run(s.data.ErrorMessage || `Twilio error ${s.data.ErrorCode ?? s.data.MessageStatus}`, s.data.MessageSid)
     return twiml(c)
   })

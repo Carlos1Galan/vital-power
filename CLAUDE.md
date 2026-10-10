@@ -15,7 +15,7 @@ Read in this order: `Docs/vitalpower-relay.md` (product spec) → `Docs/architec
 One package, two processes in dev:
 - Vite + React 19 + TS frontend in `src/`.
 - Hono API in `server/`. Node 24 runs the `.ts` files directly through type stripping, so use erasable syntax only (no enums, no namespaces, no parameter properties).
-- `node:sqlite`, the built-in driver. No ORM: plain SQL in `server/schema.sql` + `server/seed.sql`, with the database in `data/vitalpower.db`.
+- Postgres: Supabase in production through `postgres` (postgres.js) at `DATABASE_URL`; without it, PGlite (in-process Postgres) under `data/pglite`; tests always use an in-memory PGlite. No ORM: plain SQL in `server/schema.sql` + `server/seed.sql`. `server/db.ts` keeps node:sqlite's `prepare(sql).get/all/run` shape (async) and `?`/`:name` placeholders; a camelCase alias (`AS patientName`) is quoted for you. `npm run db:migrate-sqlite` copies an old `data/vitalpower.db` across once.
 
 Planned commands:
 - `npm run dev`: Vite. It proxies `/api` to `:3000` through `server.proxy`.
@@ -24,7 +24,7 @@ Planned commands:
 - `npm test`: `node --test`. Run a single file with `node --test server/priority.test.ts`.
 - Before every push: `npm test && npm run build`.
 
-The only planned dependencies are `hono`, `@hono/node-server`, `zod`, `@hono/zod-validator` and `@anthropic-ai/sdk`. React Router, an ORM, real auth and an SMS provider were left out on purpose; see `Docs/architecture.md` §2.
+The only dependencies are `hono`, `@hono/node-server`, `zod`, `@hono/zod-validator`, `@anthropic-ai/sdk` and `postgres` (dev: `@electric-sql/pglite`). React Router, an ORM, real auth and an SMS provider were left out on purpose; see `Docs/architecture.md` §2.
 
 ## Architecture essentials
 

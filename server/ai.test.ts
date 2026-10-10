@@ -25,26 +25,25 @@ const call = async (method: string, path: string, body?: unknown, cookie?: strin
 }
 const feedKeys = (j: object) => assert.deepEqual(['lastReadingAt', 'mode', 'stale'].filter((k) => k in j), ['lastReadingAt', 'mode', 'stale'])
 const [PLAN, OME, ANA, HOGAR, LUIS] = [2, 3, 5, 6, 7].map((id) => `vp_user=${id}`)
-const eventOf = (patientId: number) => (db.prepare("SELECT id FROM outage_events WHERE patient_id = ? AND status IN ('possible','confirmed')").get(patientId) as { id: number }).id
-const checkinOf = (patientId: number) => (db.prepare('SELECT id FROM checkins WHERE event_id = ?').get(eventOf(patientId)) as { id: number }).id
+const eventOf = async (patientId: number) => (await db.prepare("SELECT id FROM outage_events WHERE patient_id = ? AND status IN ('possible','confirmed')").get(patientId) as { id: number }).id
+const checkinOf = async (patientId: number) => (await db.prepare('SELECT id FROM checkins WHERE event_id = ?').get(await eventOf(patientId)) as { id: number }).id
 const settle = () => new Promise((r) => setTimeout(r, 10)) // the reply reading is stored after the response
-const count = (table: string) => (db.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n
+const count = async (table: string) => (await db.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n
 
 const draft = { displayName: 'Don Ramón', phone: null, municipality: 'CAGUAS', zone: 'URB VILLA BLANCA', needs: [{ kind: 'oxygen', batteryHours: 2 }, { kind: 'insulin', batteryHours: null }] }
 const profile = { displayName: 'Doña Luz (sintética)', phone: '787-555-0199', municipality: 'CAGUAS', zone: 'URB VILLA BLANCA', needs: [{ kind: 'cpap', batteryHours: 6 }] }
 
-const reset = () => {
-  db.exec(`DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings;
+const reset = async () => {
+  await db.exec(`DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings;
     DELETE FROM intakes; DELETE FROM patient_needs WHERE patient_id > 5; DELETE FROM patients WHERE id > 5;
     UPDATE settings SET value = 'live' WHERE key = 'mode'`)
 }
-beforeEach(() => {
-  reset()
+beforeEach(async () => {
+  await reset()
   prompts.length = 0
   answer = null
-  const id = Number(db.prepare("INSERT INTO luma_readings (endpoint, http_status, ok, payload) VALUES ('towns', 200, 1, ?)")
-    .run(JSON.stringify({ CAGUAS: [{ zone: 'URB VILLA BLANCA', area: 'CAGUAS' }] })).lastInsertRowid)
-  processTownsReading(id) // opens events for patients 1 and 5
+  const id = (await db.prepare("INSERT INTO luma_readings (endpoint, http_status, ok, payload) VALUES ('towns', 200, 1, ?) RETURNING id").get(JSON.stringify({ CAGUAS: [{ zone: 'URB VILLA BLANCA', area: 'CAGUAS' }] })) as { id: number }).id
+  await processTownsReading(id) // opens events for patients 1 and 5
 })
 after(reset)
 
@@ -55,8 +54,8 @@ test('intake extract returns the AI draft, stores the intake, and saves no patie
   feedKeys(json)
   assert.deepEqual(json.profile, draft)
   assert.ok(json.zones.includes('URB VILLA BLANCA'))
-  assert.deepEqual({ ...(db.prepare('SELECT caregiver_id, status, patient_id FROM intakes WHERE id = ?').get(json.intakeId) as object) }, { caregiver_id: 5, status: 'draft', patient_id: null })
-  assert.equal(count('patients'), 5)
+  assert.deepEqual({ ...(await db.prepare('SELECT caregiver_id, status, patient_id FROM intakes WHERE id = ?').get(json.intakeId) as object) }, { caregiver_id: 5, status: 'draft', patient_id: null })
+  assert.equal(await count('patients'), 5)
   assert.match(prompts[0].user, /<relato>\nMi papá Don Ramón/) // the transcript travels as data, inside tags
   assert.match(prompts[0].system, /CAGUAS: .*URB VILLA BLANCA/) // the model sees the zone catalogue
 })
@@ -80,7 +79,7 @@ test('intake extract answers 502 with a readable error when the AI fails or retu
   assert.equal((await call('POST', '/intake/extract', { transcript: 'mi mamá usa CPAP' }, ANA)).status, 502)
   answer = { ...draft, needs: [{ kind: 'wheelchair', batteryHours: 1 }] }
   assert.equal((await call('POST', '/intake/extract', { transcript: 'mi mamá usa CPAP' }, ANA)).status, 502)
-  assert.equal(count('intakes'), 0)
+  assert.equal(await count('intakes'), 0)
   assert.equal((await call('POST', '/intake/extract', { transcript: 'x' }, ANA)).status, 400)
   assert.equal((await call('POST', '/intake/extract', { transcript: 'mi mamá usa CPAP' }, PLAN)).status, 403)
 })
@@ -91,19 +90,19 @@ test('saving a confirmed profile creates the patient with consent and closes the
   const saved = await call('POST', '/patients', { intakeId, isSelf: false, consent: true, profile }, ANA)
   assert.equal(saved.status, 201)
   feedKeys(saved.json)
-  const row = db.prepare('SELECT caregiver_id, facility_id, is_self, display_name, municipality, zone, consent_version, consent_at IS NOT NULL AS consented FROM patients WHERE id = ?').get(saved.json.id) as object
+  const row = await db.prepare('SELECT caregiver_id, facility_id, is_self, display_name, municipality, zone, consent_version, (consent_at IS NOT NULL)::int AS consented FROM patients WHERE id = ?').get(saved.json.id) as object
   assert.deepEqual({ ...row }, { caregiver_id: 5, facility_id: null, is_self: 0, display_name: 'Doña Luz (sintética)', municipality: 'CAGUAS', zone: 'URB VILLA BLANCA', consent_version: 'v1', consented: 1 })
-  assert.deepEqual((db.prepare('SELECT kind, battery_hours FROM patient_needs WHERE patient_id = ?').all(saved.json.id) as object[]).map((n) => ({ ...n })), [{ kind: 'cpap', battery_hours: 6 }])
-  assert.deepEqual({ ...(db.prepare('SELECT status, patient_id FROM intakes WHERE id = ?').get(intakeId) as object) }, { status: 'confirmed', patient_id: saved.json.id })
+  assert.deepEqual((await db.prepare('SELECT kind, battery_hours FROM patient_needs WHERE patient_id = ?').all(saved.json.id) as object[]).map((n) => ({ ...n })), [{ kind: 'cpap', battery_hours: 6 }])
+  assert.deepEqual({ ...(await db.prepare('SELECT status, patient_id FROM intakes WHERE id = ?').get(intakeId) as object) }, { status: 'confirmed', patient_id: saved.json.id })
   assert.ok((await call('GET', '/patients/mine', undefined, ANA)).json.patients.some((p: any) => p.id === saved.json.id))
 })
 
 test('facility_id comes from the current user, never from the request body', async () => {
   const staff = await call('POST', '/patients', { isSelf: false, consent: true, facilityId: 1, facility_id: 1, profile: { ...profile, zone: null } }, HOGAR)
   assert.equal(staff.status, 201)
-  assert.equal((db.prepare('SELECT facility_id FROM patients WHERE id = ?').get(staff.json.id) as { facility_id: number }).facility_id, 4)
+  assert.equal((await db.prepare('SELECT facility_id FROM patients WHERE id = ?').get(staff.json.id) as { facility_id: number }).facility_id, 4)
   const ana = await call('POST', '/patients', { isSelf: false, consent: true, facilityId: 4, profile }, ANA)
-  assert.equal((db.prepare('SELECT facility_id FROM patients WHERE id = ?').get(ana.json.id) as { facility_id: number | null }).facility_id, null)
+  assert.equal((await db.prepare('SELECT facility_id FROM patients WHERE id = ?').get(ana.json.id) as { facility_id: number | null }).facility_id, null)
 })
 
 test('saving a patient refuses missing consent, unknown places, a second self record and other roles', async () => {
@@ -116,33 +115,33 @@ test('saving a patient refuses missing consent, unknown places, a second self re
   assert.equal((await call('POST', '/patients', { ...body, isSelf: true }, LUIS)).status, 409) // Luis already has his own record
   assert.equal((await call('POST', '/patients', body, PLAN)).status, 403)
   assert.equal((await call('POST', '/patients', body)).status, 401)
-  assert.equal(count('patients'), 5)
+  assert.equal(await count('patients'), 5)
   assert.deepEqual((await call('GET', '/zones/CAGUAS', undefined, ANA)).json.zones.includes('URB VILLA BLANCA'), true)
   assert.equal((await call('GET', '/zones/Caguas', undefined, ANA)).status, 400)
 })
 
 test('a reply is saved with its AI reading, and the coordinator sees both', async () => {
   answer = { hasPower: 'no', batteryHours: 2, summary: 'No hay luz y le quedan dos horas de batería.' }
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'Se fue la luz, quedan dos horas' }, ANA)).status, 200)
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'Se fue la luz, quedan dos horas' }, ANA)).status, 200)
   await settle()
   assert.match(prompts[0].user, /<respuesta>\nSe fue la luz, quedan dos horas\n<\/respuesta>/)
-  const { json } = await call('GET', `/events/${eventOf(1)}`, undefined, PLAN)
+  const { json } = await call('GET', `/events/${await eventOf(1)}`, undefined, PLAN)
   assert.equal(json.checkin.replyText, 'Se fue la luz, quedan dos horas')
   assert.deepEqual(json.checkin.aiParsed, answer)
-  assert.equal((db.prepare('SELECT status FROM outage_events WHERE id = ?').get(eventOf(1)) as { status: string }).status, 'possible') // the reading changes nothing by itself
+  assert.equal((await db.prepare('SELECT status FROM outage_events WHERE id = ?').get(await eventOf(1)) as { status: string }).status, 'possible') // the reading changes nothing by itself
 })
 
 test('an AI failure never loses the reply', async () => {
   answer = new Error('timeout')
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)).status, 200)
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)).status, 200)
   await settle()
-  const { json } = await call('GET', `/events/${eventOf(1)}`, undefined, PLAN)
+  const { json } = await call('GET', `/events/${await eventOf(1)}`, undefined, PLAN)
   assert.equal(json.checkin.replyText, 'No hay luz')
   assert.equal(json.checkin.aiParsed, null)
 })
 
 test('only the organization that claimed the event drafts and approves the briefing', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   answer = { briefing: 'Don Ramón usa concentrador.', callScript: 'Buenas, le llamo de…' }
   assert.equal((await call('POST', `/events/${id}/briefing`, {}, PLAN)).status, 403) // unclaimed
   await call('POST', `/events/${id}/claim`, undefined, OME)
@@ -167,13 +166,13 @@ test('only the organization that claimed the event drafts and approves the brief
 })
 
 test('a failed briefing draft answers 502 and stores nothing', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   await call('POST', `/events/${id}/claim`, undefined, OME)
   answer = new Error('overloaded')
   const r = await call('POST', `/events/${id}/briefing`, {}, OME)
   assert.equal(r.status, 502)
   assert.equal(typeof r.json.error, 'string')
-  assert.equal(count('briefings'), 0)
+  assert.equal(await count('briefings'), 0)
   assert.equal((await call('GET', `/events/${id}`, undefined, OME)).json.briefing, null)
 })
 
@@ -187,7 +186,7 @@ test('AI drafts are limited per user per minute', async () => {
 })
 
 test('a coordinator can write the briefing by hand, with no AI call, and still has to approve it', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   await call('POST', `/events/${id}/claim`, undefined, OME)
   answer = new Error('the AI must not be called')
   const made = await call('POST', `/events/${id}/briefing`, { text: '  Llamar a Don Ramón y preguntar por la batería.  ' }, OME)
@@ -200,7 +199,7 @@ test('a coordinator can write the briefing by hand, with no AI call, and still h
 
 const NL = String.fromCharCode(10)
 test('an AI briefing can be asked for in English', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   await call('POST', `/events/${id}/claim`, undefined, OME)
   answer = { briefing: 'Don Ramón uses oxygen.', callScript: 'Hello, this is…' }
   const made = await call('POST', `/events/${id}/briefing`, { lang: 'en' }, OME)

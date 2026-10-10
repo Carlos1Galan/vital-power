@@ -32,9 +32,9 @@ async function read(endpoint: 'regions' | 'towns', init: RequestInit, schema: z.
   } catch (e) {
     error = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
   }
-  return Number(db.prepare(
-    'INSERT INTO luma_readings (endpoint, request_body, http_status, ok, error, payload, luma_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(endpoint, (init.body as string) ?? null, http_status, ok, error, payload, luma_timestamp).lastInsertRowid)
+  return (await db.prepare(
+    'INSERT INTO luma_readings (endpoint, request_body, http_status, ok, error, payload, luma_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+  ).get(endpoint, (init.body as string) ?? null, http_status, ok, error, payload, luma_timestamp) as { id: number }).id
 }
 
 // One poll: region counts plus affected zones for all 78 municipalities (one POST, same cost as one town).
@@ -42,37 +42,37 @@ export async function pollOnce(f: typeof fetch = fetch) {
   const regionsId = await read('regions', { method: 'GET' }, Regions, f)
   const townsId = await read('towns', { method: 'POST', body: JSON.stringify(MUNICIPALITIES) }, Towns, f)
   // In replay the live feed is still recorded, but only the replayed readings drive events.
-  if (setting('mode') === 'live') processTownsReading(townsId)
+  if (await setting('mode') === 'live') await processTownsReading(townsId)
   return { regionsId, townsId }
 }
 
 // Replay walks the recorded live towns readings in id order. The cursor is the reading being shown.
-const nextRecorded = (afterId: number) =>
-  (db.prepare("SELECT id FROM luma_readings WHERE source = 'live' AND endpoint = 'towns' AND ok = 1 AND id > ? ORDER BY id LIMIT 1")
+const nextRecorded = async (afterId: number) =>
+  (await db.prepare("SELECT id FROM luma_readings WHERE source = 'live' AND endpoint = 'towns' AND ok = 1 AND id > ? ORDER BY id LIMIT 1")
     .get(afterId) as { id: number } | undefined)?.id ?? null
 
 // false = fromReadingId is not a recorded towns reading.
-export function setMode(mode: 'live' | 'replay', fromReadingId?: number) {
+export async function setMode(mode: 'live' | 'replay', fromReadingId?: number) {
   if (mode === 'live') {
-    setSetting('mode', 'live')
+    await setSetting('mode', 'live')
     return true
   }
-  const start = nextRecorded((fromReadingId ?? 1) - 1)
+  const start = await nextRecorded((fromReadingId ?? 1) - 1)
   if (!start || (fromReadingId && start !== fromReadingId)) return false
-  db.prepare(`UPDATE outage_events SET status = 'restored', closed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  await db.prepare(`UPDATE outage_events SET status = 'restored', closed_at = iso(now())
     WHERE mode = 'replay' AND status IN ('possible','confirmed')`).run() // a new replay run starts clean
-  setSetting('mode', 'replay')
-  setSetting('replay_cursor', String(start))
-  processTownsReading(start)
+  await setSetting('mode', 'replay')
+  await setSetting('replay_cursor', String(start))
+  await processTownsReading(start)
   return true
 }
 
 // One replay step: the next recorded reading drives events. null = end of the recording.
-export function replayStep() {
-  const next = nextRecorded(Number(setting('replay_cursor')))
+export async function replayStep() {
+  const next = await nextRecorded(Number(await setting('replay_cursor')))
   if (next) {
-    setSetting('replay_cursor', String(next))
-    processTownsReading(next)
+    await setSetting('replay_cursor', String(next))
+    await processTownsReading(next)
   }
   return next
 }

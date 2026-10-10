@@ -12,21 +12,21 @@ type Persona = CurrentUser & {
   home: '/app' | '/org' | '/admin'
 }
 
-export function currentUser(c: Context): CurrentUser | null {
+export async function currentUser(c: Context): Promise<CurrentUser | null> {
   const id = getCookie(c, COOKIE)
   if (!id || id.length > 9 || /\D/.test(id)) return null
-  return db.prepare('SELECT id, name, role, org_id AS orgId FROM users WHERE id = ?').get(Number(id)) as CurrentUser | undefined ?? null
+  return await db.prepare('SELECT id, name, role, org_id AS orgId FROM users WHERE id = ?').get(Number(id)) as CurrentUser | undefined ?? null
 }
 
 export const requireRole = (...roles: CurrentUser['role'][]): MiddlewareHandler => async (c, next) => {
-  const user = currentUser(c)
-  if (!user) return c.json({ ...feedStatus(), error: 'Sesión demo no iniciada' }, 401)
-  if (!roles.includes(user.role)) return c.json({ ...feedStatus(), error: 'Sin permiso para esta acción' }, 403)
+  const user = await currentUser(c)
+  if (!user) return c.json({ ...await feedStatus(), error: 'Sesión demo no iniciada' }, 401)
+  if (!roles.includes(user.role)) return c.json({ ...await feedStatus(), error: 'Sin permiso para esta acción' }, 403)
   await next()
 }
 
-export function personas() {
-  return db.prepare(`SELECT u.id, u.name, u.role, u.org_id AS orgId, o.name AS orgName, o.status AS orgStatus,
+export async function personas() {
+  return await db.prepare(`SELECT u.id, u.name, u.role, u.org_id AS orgId, o.name AS orgName, o.status AS orgStatus,
       CASE WHEN u.role = 'admin' THEN 'admin'
         WHEN u.role = 'coordinator' THEN 'coordinator'
         WHEN u.org_id IS NOT NULL THEN 'facility-staff'
@@ -36,4 +36,4 @@ export function personas() {
     FROM users u LEFT JOIN organizations o ON o.id = u.org_id ORDER BY u.id`).all() as Persona[]
 }
 
-export const persona = (id: number) => personas().find((p) => p.id === id) ?? null
+export const persona = async (id: number) => (await personas()).find((p) => p.id === id) ?? null

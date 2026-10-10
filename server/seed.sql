@@ -40,3 +40,6 @@ INSERT INTO zones (municipality, zone) VALUES
   ('CAGUAS',   'URB VILLA BLANCA'),
   ('CAGUAS',   'CANABONCITO/SEC HORMIGAS'),
   ('SAN JUAN', 'HATO REY SUR');
+
+-- Generated ids continue after the seeded ones.
+SELECT sync_ids();

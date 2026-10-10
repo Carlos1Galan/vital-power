@@ -72,10 +72,11 @@ Un coordinador humano verá el texto original junto a tu lectura y decide. ${DAT
 // A check-in reply is already saved (web or WhatsApp). The reading is a convenience for the coordinator and can take
 // seconds, so it runs in the background: the sender never waits on it and its failure loses nothing.
 export function readReplyLater(checkinId: number) {
-  const saved = db.prepare('SELECT message, reply_text AS replyText FROM checkins WHERE id = ?').get(checkinId) as { message: string; replyText: string }
-  void readReply(saved.message, saved.replyText)
-    .then((r) => db.prepare('UPDATE checkins SET ai_parsed = ? WHERE id = ?').run(JSON.stringify(r), checkinId))
-    .catch((e) => console.error('readReply failed', e))
+  void (async () => {
+    const saved = await db.prepare('SELECT message, reply_text AS replyText FROM checkins WHERE id = ?').get(checkinId) as { message: string; replyText: string }
+    const r = await readReply(saved.message, saved.replyText)
+    await db.prepare('UPDATE checkins SET ai_parsed = ? WHERE id = ?').run(JSON.stringify(r), checkinId)
+  })().catch((e) => console.error('readReply failed', e))
 }
 
 export type BriefingFacts = {

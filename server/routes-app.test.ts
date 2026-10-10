@@ -23,19 +23,19 @@ const as = (userId: number) => `vp_user=${userId}`
 const [ADMIN, PLAN, OME, PENDING, ANA, HOGAR, LUIS] = [1, 2, 3, 4, 5, 6, 7].map(as)
 
 // An outage in one CAGUAS zone (patients 1 and 5) and the SAN JUAN zone (patients 3 and 4).
-const outage = () => {
-  const id = Number(db.prepare("INSERT INTO luma_readings (endpoint, http_status, ok, payload) VALUES ('towns', 200, 1, ?)").run(JSON.stringify({
+const outage = async () => {
+  const id = (await db.prepare("INSERT INTO luma_readings (endpoint, http_status, ok, payload) VALUES ('towns', 200, 1, ?) RETURNING id").get(JSON.stringify({
     CAGUAS: [{ zone: 'URB VILLA BLANCA', area: 'CAGUAS' }], 'SAN JUAN': [{ zone: 'HATO REY SUR', area: 'SAN JUAN' }],
-  })).lastInsertRowid)
-  processTownsReading(id)
+  })) as { id: number }).id
+  await processTownsReading(id)
 }
-const eventOf = (patientId: number) => (db.prepare("SELECT id FROM outage_events WHERE patient_id = ? AND status IN ('possible','confirmed')").get(patientId) as { id: number }).id
-const checkinOf = (patientId: number) => (db.prepare('SELECT id FROM checkins WHERE event_id = ?').get(eventOf(patientId)) as { id: number }).id
-const statusOf = (eventId: number) => (db.prepare('SELECT status FROM outage_events WHERE id = ?').get(eventId) as { status: string }).status
+const eventOf = async (patientId: number) => (await db.prepare("SELECT id FROM outage_events WHERE patient_id = ? AND status IN ('possible','confirmed')").get(patientId) as { id: number }).id
+const checkinOf = async (patientId: number) => (await db.prepare('SELECT id FROM checkins WHERE event_id = ?').get(await eventOf(patientId)) as { id: number }).id
+const statusOf = async (eventId: number) => (await db.prepare('SELECT status FROM outage_events WHERE id = ?').get(eventId) as { status: string }).status
 
-beforeEach(() => {
-  db.exec("DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings; UPDATE settings SET value = 'live' WHERE key = 'mode'")
-  outage()
+beforeEach(async () => {
+  await db.exec("DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM checkins; DELETE FROM outage_events; DELETE FROM luma_readings; UPDATE settings SET value = 'live' WHERE key = 'mode'")
+  await outage()
 })
 
 test('a caregiver sees only their own patients, with the open outage', async () => {
@@ -61,24 +61,24 @@ test('pending check-ins are scoped to the caregiver and disappear once answered'
   const pending = await call('GET', '/checkins/pending', undefined, ANA)
   assert.deepEqual(pending.json.checkins.map((k: any) => k.patientId), [1])
   assert.equal(pending.json.checkins[0].message, '¿Tiene luz en su casa?')
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: '  No hay luz desde las 3  ' }, ANA)).status, 200)
-  assert.equal((db.prepare('SELECT reply_text FROM checkins WHERE id = ?').get(checkinOf(1)) as { reply_text: string }).reply_text, 'No hay luz desde las 3')
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: '  No hay luz desde las 3  ' }, ANA)).status, 200)
+  assert.equal((await db.prepare('SELECT reply_text FROM checkins WHERE id = ?').get(await checkinOf(1)) as { reply_text: string }).reply_text, 'No hay luz desde las 3')
   assert.deepEqual((await call('GET', '/checkins/pending', undefined, ANA)).json.checkins, [])
   assert.deepEqual((await call('GET', '/patients/mine', undefined, ANA)).json.patients.map((p: any) => [p.id, p.outage, p.answered]), [[1, 'possible', true], [2, null, false]])
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'otra vez' }, ANA)).status, 404) // one reply only
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'otra vez' }, ANA)).status, 404) // one reply only
 })
 
 test("a caregiver replying to another caregiver's check-in gets 404 and changes nothing", async () => {
-  const r = await call('POST', `/checkins/${checkinOf(3)}/reply`, { text: 'no es mío' }, ANA)
+  const r = await call('POST', `/checkins/${await checkinOf(3)}/reply`, { text: 'no es mío' }, ANA)
   assert.equal(r.status, 404)
   assert.equal(typeof r.json.error, 'string')
-  assert.equal((db.prepare('SELECT reply_at FROM checkins WHERE id = ?').get(checkinOf(3)) as { reply_at: string | null }).reply_at, null)
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: '' }, ANA)).status, 400)
+  assert.equal((await db.prepare('SELECT reply_at FROM checkins WHERE id = ?').get(await checkinOf(3)) as { reply_at: string | null }).reply_at, null)
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: '' }, ANA)).status, 400)
   assert.equal((await call('POST', '/checkins/abc/reply', { text: 'x' }, ANA)).status, 400)
 })
 
 test('the first organization to claim wins and the second gets 409 with the winner', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   const first = await call('POST', `/events/${id}/claim`, undefined, OME)
   assert.equal(first.status, 200)
   assert.equal(first.json.claimedBy, 'Oficina de Emergencias Demo')
@@ -90,50 +90,50 @@ test('the first organization to claim wins and the second gets 409 with the winn
 })
 
 test('a coordinator cannot see or claim outside its municipalities; a pending organization has none', async () => {
-  const sanJuan = eventOf(3)
+  const sanJuan = await eventOf(3)
   assert.equal((await call('POST', `/events/${sanJuan}/claim`, undefined, OME)).status, 404) // covers CAGUAS only
   assert.equal((await call('GET', `/events/${sanJuan}`, undefined, OME)).status, 404)
   assert.equal((await call('POST', `/events/${sanJuan}/claim`, undefined, PENDING)).status, 404) // org not approved
   assert.equal((await call('GET', `/events/${sanJuan}`, undefined, PLAN)).status, 200)
   assert.equal((await call('POST', `/events/${sanJuan}/claim`, undefined, ADMIN)).status, 403) // admin has no organization
   assert.equal((await call('POST', `/events/${sanJuan}/claim`, undefined, ANA)).status, 403)
-  assert.equal(statusOf(sanJuan), 'possible')
+  assert.equal(await statusOf(sanJuan), 'possible')
 })
 
 test('the event view shows the original reply, with no AI reading when the AI is unavailable', async () => {
-  await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
-  await call('POST', `/events/${eventOf(1)}/claim`, undefined, PLAN)
-  const { json } = await call('GET', `/events/${eventOf(1)}`, undefined, PLAN)
+  await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
+  await call('POST', `/events/${await eventOf(1)}/claim`, undefined, PLAN)
+  const { json } = await call('GET', `/events/${await eventOf(1)}`, undefined, PLAN)
   feedKeys(json)
   assert.equal(json.event.patientName, 'Don Ramón (sintético)')
   assert.equal(json.event.mine, true)
   assert.equal(json.checkin.replyText, 'No hay luz')
   assert.equal(json.checkin.aiParsed, null)
   assert.deepEqual(json.outcomes, [])
-  assert.equal((await call('GET', `/events/${eventOf(1)}`, undefined, OME)).json.event.mine, false)
-  assert.equal((await call('GET', `/events/${eventOf(1)}`, undefined, ADMIN)).status, 200)
+  assert.equal((await call('GET', `/events/${await eventOf(1)}`, undefined, OME)).json.event.mine, false)
+  assert.equal((await call('GET', `/events/${await eventOf(1)}`, undefined, ADMIN)).status, 200)
 })
 
 test('a coordinator confirms a reply: no power confirms the outage, power closes it', async () => {
-  const noReply = await call('POST', `/checkins/${checkinOf(1)}/confirm`, { hasPower: false }, PLAN)
+  const noReply = await call('POST', `/checkins/${await checkinOf(1)}/confirm`, { hasPower: false }, PLAN)
   assert.equal(noReply.status, 409) // nothing to confirm yet
-  await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
-  const ramon = eventOf(1)
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/confirm`, { hasPower: false }, PLAN)).json.status, 'confirmed')
-  assert.equal(statusOf(ramon), 'confirmed')
-  assert.equal((await call('POST', `/checkins/${checkinOf(1)}/confirm`, { hasPower: true }, OME)).json.status, 'restored')
+  await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
+  const ramon = await eventOf(1)
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/confirm`, { hasPower: false }, PLAN)).json.status, 'confirmed')
+  assert.equal(await statusOf(ramon), 'confirmed')
+  assert.equal((await call('POST', `/checkins/${await checkinOf(1)}/confirm`, { hasPower: true }, OME)).json.status, 'restored')
 
-  await call('POST', `/checkins/${checkinOf(5)}/reply`, { text: 'Sí tenemos luz' }, LUIS)
-  const luis = eventOf(5), luisCheckin = checkinOf(5)
+  await call('POST', `/checkins/${await checkinOf(5)}/reply`, { text: 'Sí tenemos luz' }, LUIS)
+  const luis = await eventOf(5), luisCheckin = await checkinOf(5)
   assert.equal((await call('POST', `/checkins/${luisCheckin}/confirm`, { hasPower: true }, PLAN)).json.status, 'false_alarm')
-  assert.equal(statusOf(luis), 'false_alarm')
+  assert.equal(await statusOf(luis), 'false_alarm')
   assert.equal((await call('POST', `/checkins/${luisCheckin}/confirm`, { hasPower: false }, PLAN)).status, 409) // closed stays closed
-  assert.equal((await call('POST', `/checkins/${checkinOf(3)}/confirm`, { hasPower: false }, OME)).status, 404) // SAN JUAN is not OME's
-  assert.equal((await call('POST', `/checkins/${checkinOf(3)}/confirm`, { hasPower: 'no' }, PLAN)).status, 400)
+  assert.equal((await call('POST', `/checkins/${await checkinOf(3)}/confirm`, { hasPower: false }, OME)).status, 404) // SAN JUAN is not OME's
+  assert.equal((await call('POST', `/checkins/${await checkinOf(3)}/confirm`, { hasPower: 'no' }, PLAN)).status, 400)
 })
 
 test('only the organization that claimed the event records the outcome', async () => {
-  const id = eventOf(1)
+  const id = await eventOf(1)
   const body = { reached: true, outcome: 'Tiene batería para 2 horas', nextAction: 'Llevar generador' }
   assert.equal((await call('POST', `/events/${id}/outcome`, body, PLAN)).status, 403) // nobody claimed it yet
   await call('POST', `/events/${id}/claim`, undefined, OME)
@@ -149,8 +149,8 @@ test('only the organization that claimed the event records the outcome', async (
 test('the caregiver sees who took the case and the result of the last call', async () => {
   const before = (await call('GET', '/patients/mine', undefined, ANA)).json.patients[0]
   assert.deepEqual([before.claimedBy, before.lastCall], [null, null])
-  await call('POST', `/events/${eventOf(1)}/claim`, undefined, OME)
-  await call('POST', `/events/${eventOf(1)}/outcome`, { reached: true, outcome: 'Tiene batería para 2 horas', nextAction: 'Llevar generador' }, OME)
+  await call('POST', `/events/${await eventOf(1)}/claim`, undefined, OME)
+  await call('POST', `/events/${await eventOf(1)}/outcome`, { reached: true, outcome: 'Tiene batería para 2 horas', nextAction: 'Llevar generador' }, OME)
   const after = (await call('GET', '/patients/mine', undefined, ANA)).json.patients
   assert.equal(after[0].claimedBy, 'Oficina de Emergencias Demo')
   assert.deepEqual([after[0].lastCall.reached, after[0].lastCall.outcome, after[0].lastCall.nextAction], [true, 'Tiene batería para 2 horas', 'Llevar generador'])
@@ -158,26 +158,26 @@ test('the caregiver sees who took the case and the result of the last call', asy
 })
 
 test('the demo reset returns to the seeded patients and organizations and keeps the recorded readings', async () => {
-  const readings = (db.prepare('SELECT count(*) n FROM luma_readings').get() as { n: number }).n
-  db.exec("INSERT INTO patients (id, caregiver_id, display_name, municipality, zone, consent_at, consent_version) VALUES (90, 5, 'Ensayo', 'CAGUAS', 'URB VILLA BLANCA', 'x', 'v1'); INSERT INTO patient_needs (patient_id, kind) VALUES (90, 'cpap')")
-  db.exec("INSERT INTO organizations (id, name, kind, org_type, status) VALUES (90, 'Org de ensayo', 'responder', 'clinic', 'pending'); INSERT INTO org_municipalities VALUES (90, 'CAGUAS'); UPDATE organizations SET status = 'approved' WHERE id = 3")
-  await call('POST', `/checkins/${checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
-  await call('POST', `/checkins/${checkinOf(1)}/confirm`, { hasPower: false }, PLAN)
-  await call('POST', `/events/${eventOf(1)}/claim`, undefined, PLAN)
-  await call('POST', `/events/${eventOf(1)}/outcome`, { reached: true, outcome: 'ok' }, PLAN)
+  const readings = (await db.prepare('SELECT count(*) n FROM luma_readings').get() as { n: number }).n
+  await db.exec("INSERT INTO patients (id, caregiver_id, display_name, municipality, zone, consent_at, consent_version) VALUES (90, 5, 'Ensayo', 'CAGUAS', 'URB VILLA BLANCA', 'x', 'v1'); INSERT INTO patient_needs (patient_id, kind) VALUES (90, 'cpap')")
+  await db.exec("INSERT INTO organizations (id, name, kind, org_type, status) VALUES (90, 'Org de ensayo', 'responder', 'clinic', 'pending'); INSERT INTO org_municipalities VALUES (90, 'CAGUAS'); UPDATE organizations SET status = 'approved' WHERE id = 3")
+  await call('POST', `/checkins/${await checkinOf(1)}/reply`, { text: 'No hay luz' }, ANA)
+  await call('POST', `/checkins/${await checkinOf(1)}/confirm`, { hasPower: false }, PLAN)
+  await call('POST', `/events/${await eventOf(1)}/claim`, undefined, PLAN)
+  await call('POST', `/events/${await eventOf(1)}/outcome`, { reached: true, outcome: 'ok' }, PLAN)
 
   assert.equal((await call('POST', '/demo/reset', undefined, PLAN)).status, 403)
   const done = await call('POST', '/demo/reset', undefined, ADMIN)
   assert.equal(done.status, 200)
   feedKeys(done.json)
-  const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n
-  assert.equal(count('SELECT count(*) n FROM patients'), 5)
-  assert.equal(count('SELECT count(*) n FROM patient_needs WHERE patient_id = 90'), 0)
-  assert.equal(count('SELECT count(*) n FROM organizations'), 4)
-  assert.equal(count('SELECT count(*) n FROM call_outcomes'), 0)
-  assert.equal(count('SELECT count(*) n FROM luma_readings'), readings)
-  assert.equal((db.prepare('SELECT status FROM organizations WHERE id = 3').get() as { status: string }).status, 'pending')
-  const ev = db.prepare('SELECT status, claimed_by_org_id FROM outage_events WHERE id = ?').get(eventOf(1)) as { status: string; claimed_by_org_id: number | null }
+  const count = async (sql: string) => (await db.prepare(sql).get() as { n: number }).n
+  assert.equal(await count('SELECT count(*) n FROM patients'), 5)
+  assert.equal(await count('SELECT count(*) n FROM patient_needs WHERE patient_id = 90'), 0)
+  assert.equal(await count('SELECT count(*) n FROM organizations'), 4)
+  assert.equal(await count('SELECT count(*) n FROM call_outcomes'), 0)
+  assert.equal(await count('SELECT count(*) n FROM luma_readings'), readings)
+  assert.equal((await db.prepare('SELECT status FROM organizations WHERE id = 3').get() as { status: string }).status, 'pending')
+  const ev = await db.prepare('SELECT status, claimed_by_org_id FROM outage_events WHERE id = ?').get(await eventOf(1)) as { status: string; claimed_by_org_id: number | null }
   assert.deepEqual({ ...ev }, { status: 'possible', claimed_by_org_id: null })
   assert.equal((await call('GET', '/checkins/pending', undefined, ANA)).json.checkins.length, 1) // the check-in can be answered again
 })
@@ -204,6 +204,6 @@ test('a new caregiver signs up with a name, is signed in, and can register a pat
   // The rehearsal reset removes the new persona and their patient; their cookie then means nobody.
   assert.equal((await call('POST', '/demo/reset', undefined, ADMIN)).status, 200)
   assert.equal((await call('GET', '/demo/me', undefined, cookie)).json.user, null)
-  assert.equal((db.prepare('SELECT count(*) n FROM users').get() as { n: number }).n, 7)
-  assert.equal((db.prepare('SELECT count(*) n FROM patients').get() as { n: number }).n, 5)
+  assert.equal((await db.prepare('SELECT count(*) n FROM users').get() as { n: number }).n, 7)
+  assert.equal((await db.prepare('SELECT count(*) n FROM patients').get() as { n: number }).n, 5)
 })

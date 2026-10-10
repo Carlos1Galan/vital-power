@@ -1,7 +1,14 @@
 # Plan: Postgres on Supabase, API on Vercel
 
-**Status:** draft, post-hackathon. Not for the 10-10 demo (that runs on the hybrid setup below).
+**Status (2026-10-09, branch `feat/supabase`):** steps 1–3, 6 and 7 are done; 4, 5 and 8 remain. The 10-10 demo runs from `main` on SQLite plus the hybrid setup below.
 **Read first:** `Docs/architecture.md` §3 (schema), `CLAUDE.md` (invariants).
+
+### What was built
+- `server/db.ts`: one async `db` with node:sqlite's `prepare().get/all/run` shape over postgres.js (`DATABASE_URL`) or PGlite. It rewrites `?`/`:name` to `$n` and quotes camelCase aliases (Postgres would fold `AS patientName` to `patientname`); `db.tx()` uses `AsyncLocalStorage`.
+- `server/schema.sql`: Postgres, idempotent; `iso()` keeps timestamps as the same ISO text; `sync_ids()` moves identity sequences past explicit ids; RLS on every table (step 6).
+- `server/migrate-sqlite.ts` (`npm run db:migrate-sqlite`): step 7. One transaction, ids preserved, row counts compared, refuses a target that already has readings unless `--replace`.
+- Verified: all 85 tests pass on in-memory PGlite and through postgres.js against a Postgres wire server; a migration of the real `data/vitalpower.db` (182 readings) came out byte-identical, and the API replayed it, ranked it and settled a claim race on the copy.
+- Step 1 was folded into step 3: converting to async and to Postgres in one pass was checked by the same tests on both drivers.
 
 ## Why
 

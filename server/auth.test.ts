@@ -113,12 +113,12 @@ test('requireRole checks current roles and returns feed status on denial', async
 })
 
 test('deleting a persona invalidates its existing cookie immediately', async () => {
-  const id = Number(db.prepare("INSERT INTO users (name, role) VALUES ('Persona temporal', 'admin')").run().lastInsertRowid)
+  const id = (await db.prepare("INSERT INTO users (name, role) VALUES ('Persona temporal', 'admin') RETURNING id").get() as { id: number }).id
   try {
     const cookie = await login(id)
     const guarded = new Hono().get('/x', requireRole('admin'), (c) => c.json({ ok: true }))
     assert.equal((await guarded.request('/x', { headers: { Cookie: cookie } })).status, 200)
-    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+    await db.prepare('DELETE FROM users WHERE id = ?').run(id)
     const me = await call('GET', '/demo/me', undefined, cookie)
     assert.equal(me.status, 200)
     assert.equal(me.json.user, null)
@@ -128,6 +128,6 @@ test('deleting a persona invalidates its existing cookie immediately', async () 
     feedKeys(json)
     assert.equal(typeof json.error, 'string')
   } finally {
-    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+    await db.prepare('DELETE FROM users WHERE id = ?').run(id)
   }
 })
