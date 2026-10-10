@@ -84,11 +84,15 @@ test('the admin test button messages only the demo phone, with a cooldown', asyn
   assert.equal(sent.length, 1)
 })
 
-test('the simulate buttons open a fresh check-in that the sweep sends, for the caregiver or the patient', async () => {
+test('the simulate buttons open a fresh check-in that the sweep sends, for the caregiver or the patient', async (t) => {
   const press = (to: string, user = 1) => app.request('/api/admin/simulate-checkin', { method: 'POST', body: JSON.stringify({ to }), headers: { Cookie: `vp_user=${user}`, 'Content-Type': 'application/json' } })
   assert.equal((await press('caregiver', 2)).status, 403) // a coordinator
   assert.equal((await press('nobody')).status, 400)
   const first = await eventOf(1)
+  const realNow = Date.now
+  let clock = realNow() // the 10 s cooldown, without waiting for it
+  Date.now = () => clock
+  t.after(() => { Date.now = realNow })
   for (const [to, patientId, name, answeredBy] of [['caregiver', 1, 'Don Ramón', 'Cuidadora Ana (hija)'], ['patient', 5, 'Luis', 'Paciente Luis (auto-registro)']] as const) {
     const res = await press(to)
     assert.equal(res.status, 200)
@@ -98,7 +102,15 @@ test('the simulate buttons open a fresh check-in that the sweep sends, for the c
     await sendCheckins()
     assert.equal(sent.length, 1)
     assert.ok(sent[0].Body.includes(name) && sent[0].Body.includes('¿Tiene luz en su casa?'))
+    assert.equal((await press(to)).status, 429) // pressed again right away
+    clock += 10_000
   }
   assert.notEqual(await eventOf(1), first) // pressed again = the old case closed, a new one opened
   assert.equal((await db.prepare('SELECT status FROM outage_events WHERE id = ?').get(first) as { status: string }).status, 'false_alarm')
+  // A case an organization took stays open.
+  const taken = await eventOf(5)
+  await db.prepare('UPDATE outage_events SET claimed_by_org_id = 1 WHERE id = ?').run(taken)
+  clock += 10_000
+  assert.equal((await press('patient')).status, 409)
+  assert.equal(await eventOf(5), taken)
 })

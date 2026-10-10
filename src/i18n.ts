@@ -746,6 +746,7 @@ const FIXED_EN: Record<string, string> = {
   "Espere unos segundos antes de otra prueba": "Wait a few seconds before another test",
   "Todavía no hay lecturas de LUMA": "There are no LUMA readings yet",
   "No hay paciente para esta prueba": "There is no patient for this test",
+  "Una organización ya tomó el caso de este paciente. Reinicie la demostración.": "An organization already took this patient's case. Reset the demo.",
   "El paciente no tiene teléfono para WhatsApp": "The patient has no phone number for WhatsApp",
   '¿Tiene luz en su casa?': 'Do you have power at home?',
   'Posible apagón, sin confirmar': 'Possible outage, not confirmed',
