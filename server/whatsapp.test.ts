@@ -38,7 +38,7 @@ beforeEach(async () => {
 
 test('each new check-in goes out once, to the demo phone', async () => {
   assert.equal(sent.length, 2)
-  assert.ok(sent.every((m) => m.To === `whatsapp:+${DEMO}` && m.From === 'whatsapp:+14155238886' && m.Body.endsWith('¿Tiene luz en su casa?')))
+  assert.ok(sent.every((m) => m.To === `whatsapp:+${DEMO}` && m.From === 'whatsapp:+14155238886' && m.Body.includes('¿Tiene luz en su casa?\nResponda NO')))
   assert.equal(sent[0].StatusCallback, 'https://demo.example/api/whatsapp/status')
   await sendCheckins()
   assert.equal(sent.length, 2)

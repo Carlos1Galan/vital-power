@@ -14,6 +14,8 @@ const NOW = 'iso(now())'
 const OPEN = "e.status IN ('possible','confirmed')"
 const SANDBOX = 'whatsapp:+14155238886' // Twilio's shared WhatsApp sandbox number
 export const RECEIPT = 'Gracias, recibimos su respuesta. Un coordinador la revisará.'
+// Plain text has no buttons (the sandbox sends no template), so the check-in names the answers it expects.
+const REPLY_HINT = 'Responda NO si no tiene luz o SÍ si tiene luz. Si quiere, díganos cuántas horas de batería le quedan al equipo.'
 
 export const whatsappOn = () => !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN)
 
@@ -74,7 +76,7 @@ export async function sendCheckins() {
       AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.event_id = e.id)`).all(mode) as { eventId: number; name: string; phone: string | null; message: string }[]
   await Promise.all(rows.flatMap((r) => {
     const phone = waNumber(r.phone)
-    const body = `${mode === 'replay' ? 'REPLAY · ' : ''}VitalPower · ${r.name}\n${r.message}`
+    const body = `${mode === 'replay' ? 'REPLAY · ' : ''}VitalPower · ${r.name}\n${r.message}\n${REPLY_HINT}`
     return phone ? [send({ eventId: r.eventId, phone, body, template: env.TWILIO_CHECKIN_CONTENT_SID || undefined })] : []
   }))
 }
