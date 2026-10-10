@@ -31,6 +31,7 @@ const OrgBody = z.object({
 const admin = requireRole('admin')
 // ponytail: one global cooldown for the WhatsApp test button; enough for a single presenter.
 let lastWhatsappTest = 0
+let lastSimulation = 0
 
 // Owned by A: public status, organization registration, call list, admin.
 export const dataRoutes = new Hono()
@@ -111,16 +112,23 @@ export const dataRoutes = new Hono()
   // to: 'patient' = the self-registered patient answers; 'caregiver' = a family caregiver answers for their patient.
   // ponytail: in live mode the next towns poll restores the case if LUMA does not list that zone; run it in replay for a steady demo.
   .post('/admin/simulate-checkin', admin, small, valid('json', z.object({ to: z.enum(['patient', 'caregiver']) })), async (c) => {
+    // Same gates as the test button: the sweep must send only to WHATSAPP_DEMO_TO, and a cooldown keeps presses from piling up sends.
+    if (whatsappOn() && !waNumber(null)) return c.json(await withFeed({ error: 'Falta WHATSAPP_DEMO_TO' }), 409)
+    if (Date.now() - lastSimulation < 10_000) return c.json(await withFeed({ error: 'Espere unos segundos antes de otra prueba' }), 429)
     const mode = await setting('mode')
     const reading = await db.prepare('SELECT max(id) AS id FROM luma_readings').get() as { id: number | null }
     if (!reading.id) return c.json(await withFeed({ error: 'Todavía no hay lecturas de LUMA' }), 409)
     const p = await db.prepare(`SELECT p.id, p.display_name AS patient, u.name AS answeredBy FROM patients p JOIN users u ON u.id = p.caregiver_id
       WHERE p.is_self = ? AND p.facility_id IS NULL ORDER BY p.id LIMIT 1`).get(c.req.valid('json').to === 'patient' ? 1 : 0) as { id: number; patient: string; answeredBy: string } | undefined
     if (!p) return c.json(await withFeed({ error: 'No hay paciente para esta prueba' }), 404)
+    // Never close a case an organization took: anyone can be admin in the demo. Reiniciar demo releases it.
+    if (await db.prepare(`SELECT 1 FROM outage_events WHERE patient_id = ? AND mode = ? AND status IN ('possible','confirmed')
+      AND claimed_by_org_id IS NOT NULL`).get(p.id, mode)) return c.json(await withFeed({ error: 'Una organización ya tomó el caso de este paciente. Reinicie la demostración.' }), 409)
+    lastSimulation = Date.now()
     const eventId = await db.tx(async () => {
-      // Pressing it again starts over: the previous simulated or real open case of this patient closes as a false alarm.
+      // Pressing it again starts over: the patient's open, unclaimed case closes as a false alarm.
       await db.prepare(`UPDATE outage_events SET status = 'false_alarm', closed_at = iso(now())
-        WHERE patient_id = ? AND mode = ? AND status IN ('possible','confirmed')`).run(p.id, mode)
+        WHERE patient_id = ? AND mode = ? AND status IN ('possible','confirmed') AND claimed_by_org_id IS NULL`).run(p.id, mode)
       const { id } = await db.prepare('INSERT INTO outage_events (patient_id, opened_reading_id, mode) VALUES (?, ?, ?) RETURNING id').get(p.id, reading.id, mode) as { id: number }
       await db.prepare('INSERT INTO checkins (event_id, message) VALUES (?, ?)').run(id, CHECKIN_MESSAGE)
       return id
