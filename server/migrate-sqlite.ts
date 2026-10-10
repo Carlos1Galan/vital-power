@@ -1,9 +1,9 @@
-// One-time copy of the SQLite demo database into Postgres: DATABASE_URL (Supabase) when set, else local data/pglite.
+// One-time copy of the SQLite demo database into Supabase (DATABASE_URL in .env).
 //   npm run db:migrate-sqlite -- [path/to/vitalpower.db] [--replace]
 // Every table moves with its ids, in one transaction: on any error nothing is written. The source is opened read-only.
 // The target must hold no LUMA readings yet, so recorded readings are never overwritten by accident; --replace allows it.
 import { DatabaseSync } from 'node:sqlite'
-import { db, engine } from './db.ts'
+import { db } from './db.ts'
 
 const args = process.argv.slice(2)
 const file = args.find((a) => !a.startsWith('--')) ?? 'data/vitalpower.db'
@@ -20,7 +20,7 @@ const sourceCount = (t: string) => has(t) ? (src.prepare(`SELECT count(*) AS n F
 const targetCount = async (t: string) => (await db.prepare(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n
 
 try {
-  console.log(`${file} → ${engine === 'postgres' ? 'Postgres at DATABASE_URL' : engine}`)
+  console.log(`${file} → Supabase (DATABASE_URL)`)
   if (!replace && await targetCount('luma_readings') > 0) {
     console.error('The target already holds LUMA readings. Nothing was copied. Run again with --replace to overwrite it.')
     process.exitCode = 1

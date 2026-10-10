@@ -4,7 +4,7 @@
 **Read first:** `Docs/architecture.md` §3 (schema), `CLAUDE.md` (invariants).
 
 ### What was built
-- `server/db.ts`: one async `db` with node:sqlite's `prepare().get/all/run` shape over postgres.js (`DATABASE_URL`) or PGlite. It rewrites `?`/`:name` to `$n` and quotes camelCase aliases (Postgres would fold `AS patientName` to `patientname`); `db.tx()` uses `AsyncLocalStorage`.
+- `server/db.ts`: one async `db` with node:sqlite's `prepare().get/all/run` shape. The app connects only to Supabase (`DATABASE_URL`, session pooler; it will not start without it, and TLS is required unless the URL says otherwise); PGlite is used only by tests, in memory. It rewrites `?`/`:name` to `$n` and quotes camelCase aliases (Postgres would fold `AS patientName` to `patientname`); `db.tx()` uses `AsyncLocalStorage`.
 - `server/schema.sql`: Postgres, idempotent; `iso()` keeps timestamps as the same ISO text; `sync_ids()` moves identity sequences past explicit ids; RLS on every table (step 6).
 - `server/migrate-sqlite.ts` (`npm run db:migrate-sqlite`): step 7. One transaction, ids preserved, row counts compared, refuses a target that already has readings unless `--replace`.
 - Verified: all 85 tests pass on in-memory PGlite and through postgres.js against a Postgres wire server; a migration of the real `data/vitalpower.db` (182 readings) came out byte-identical, and the API replayed it, ranked it and settled a claim race on the copy.
@@ -110,3 +110,7 @@ Region: put the Supabase project in `us-east-1` and the Vercel function in `iad1
 ## Out of scope
 
 An ORM, Supabase Realtime, the Supabase JS client in the browser, and `timestamptz` columns. Each can come later, and none is needed to move off the laptop.
+
+## Connection: session pooler, not direct (2026-10-09)
+
+Supabase's direct host (`db.<ref>.supabase.co:5432`) is IPv6-only unless the project buys the IPv4 add-on (paid plan). The development Mac has no IPv6 route, and Vercel Functions cannot reach IPv6 hosts. So `DATABASE_URL` is the **session pooler** string (IPv4, port 5432, the alternative Supabase recommends to a direct connection on IPv4 networks). Nothing is prepared server-side, so switching to the transaction pooler (:6543) for Vercel later is also only a URL change.

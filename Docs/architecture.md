@@ -40,7 +40,7 @@ Choices the user made: typed API client (Hono RPC); landing page aimed at **judg
 server/            Node 24 runs .ts directly (type stripping; matches erasableSyntaxOnly)
   main.ts          start Hono on :3000, serve dist/ in prod, start LUMA poller
   app.ts           all routes; export type AppType = typeof app
-  db.ts            Postgres: postgres.js at DATABASE_URL (Supabase), else PGlite; runs schema.sql + seed
+  db.ts            Supabase Postgres via postgres.js at DATABASE_URL (tests: in-memory PGlite); runs schema.sql + seed
   schema.sql
   luma.ts          fetch both endpoints, store raw, poll every 3 min, replay mode
   priority.ts      pure ranking rules → { tier, reasons[] }

@@ -40,5 +40,4 @@ next-env.d.ts
 # app
 /dist
 /data/*.db*
-/data/pglite/
 .superpowers/

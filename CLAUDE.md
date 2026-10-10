@@ -15,7 +15,7 @@ Read in this order: `Docs/vitalpower-relay.md` (product spec) → `Docs/architec
 One package, two processes in dev:
 - Vite + React 19 + TS frontend in `src/`.
 - Hono API in `server/`. Node 24 runs the `.ts` files directly through type stripping, so use erasable syntax only (no enums, no namespaces, no parameter properties).
-- Postgres: Supabase in production through `postgres` (postgres.js) at `DATABASE_URL`; without it, PGlite (in-process Postgres) under `data/pglite`; tests always use an in-memory PGlite. No ORM: plain SQL in `server/schema.sql` + `server/seed.sql`. `server/db.ts` keeps node:sqlite's `prepare(sql).get/all/run` shape (async) and `?`/`:name` placeholders; a camelCase alias (`AS patientName`) is quoted for you. `npm run db:migrate-sqlite` copies an old `data/vitalpower.db` across once.
+- Postgres: Supabase only, through `postgres` (postgres.js) at `DATABASE_URL` (Supabase's session pooler, IPv4; the API refuses to start without it). Tests always use an in-memory PGlite and never touch Supabase. No ORM: plain SQL in `server/schema.sql` + `server/seed.sql`. `server/db.ts` keeps node:sqlite's `prepare(sql).get/all/run` shape (async) and `?`/`:name` placeholders; a camelCase alias (`AS patientName`) is quoted for you. `npm run db:migrate-sqlite` copies an old `data/vitalpower.db` across once.
 
 Planned commands:
 - `npm run dev`: Vite. It proxies `/api` to `:3000` through `server.proxy`.

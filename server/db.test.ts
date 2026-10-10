@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { engine, toPg } from './db.ts'
 
-// Run directly (`node server/db.test.ts`, an IDE "run file") too: tests must never open DATABASE_URL or data/pglite.
+// Run directly (`node server/db.test.ts`, an IDE "run file") too: tests must never open DATABASE_URL (Supabase).
 test('test files use an in-memory database', () => {
   assert.equal(engine, process.env.TEST_DATABASE_URL ? 'postgres' : 'pglite:memory')
 })

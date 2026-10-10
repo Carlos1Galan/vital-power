@@ -1,15 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import postgres from 'postgres'
 
 const sql = (name: string) => readFileSync(new URL(name, import.meta.url), 'utf8')
 
-// Test files always get their own in-memory Postgres (PGlite), under `node --test` (NODE_TEST_CONTEXT) or run directly,
-// so a test's DELETEs can never reach DATABASE_URL. TEST_DATABASE_URL (a throwaway database only) runs them on a real server.
+// The app connects only to Supabase (DATABASE_URL). Test files always get their own in-memory Postgres (PGlite), under
+// `node --test` (NODE_TEST_CONTEXT) or run directly, so a test's DELETEs can never reach Supabase.
+// TEST_DATABASE_URL (a throwaway database only) runs them on a real server instead.
 const isTest = !!(process.env.NODE_TEST_CONTEXT || process.argv[1]?.endsWith('.test.ts'))
 const url = isTest ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL
-const dir = isTest ? undefined : process.env.PGLITE_DIR ?? 'data/pglite'
-export const engine = url ? 'postgres' : dir ? `pglite:${dir}` : 'pglite:memory'
+if (!isTest && !url) throw new Error('DATABASE_URL is not set. Copy the Supabase connection string into .env (see .env.example).')
+export const engine = url ? 'postgres' : 'pglite:memory'
 
 type Row = Record<string, unknown>
 type Conn = {
@@ -19,9 +20,14 @@ type Conn = {
   end(): Promise<void>
 }
 
-// Supabase (or any Postgres). Its transaction pooler (:6543) has no prepared statements; bigint (count) comes back as a number.
+// Supabase through its session pooler (IPv4). Any of its connection strings works: nothing is prepared server-side, which
+// the transaction pooler requires and the others do not mind. Encrypted unless the URL says otherwise (?sslmode=disable
+// for a local test server). bigint (count) comes back as a number.
 function server(connection: string): Conn {
-  const s = postgres(connection, { prepare: false, idle_timeout: 20, types: { int8: { to: 20, from: [20], serialize: String, parse: Number } } })
+  const s = postgres(connection, {
+    prepare: false, idle_timeout: 20, ssl: /[?&]sslmode=/.test(connection) ? undefined : 'require',
+    types: { int8: { to: 20, from: [20], serialize: String, parse: Number } },
+  })
   const wrap = (q: postgres.Sql | postgres.TransactionSql): Conn => ({
     query: async (text, params) => {
       const r = await q.unsafe(text, params as postgres.ParameterOrJSON<never>[])
@@ -34,11 +40,10 @@ function server(connection: string): Conn {
   return wrap(s)
 }
 
-// PGlite: Postgres compiled to WASM, in-process. In memory for tests; a folder for local dev without DATABASE_URL.
-async function local(dataDir?: string): Promise<Conn> {
+// PGlite: Postgres compiled to WASM, in-process and in memory. Tests only (a devDependency).
+async function memory(): Promise<Conn> {
   const { PGlite } = await import('@electric-sql/pglite')
-  if (dataDir) mkdirSync(dataDir, { recursive: true })
-  const pg = await PGlite.create(dataDir, { parsers: { 20: Number } })
+  const pg = await PGlite.create({ parsers: { 20: Number } })
   type Q = Pick<typeof pg, 'query' | 'exec'>
   const wrap = (q: Q): Conn => ({
     query: async (text, params) => {
@@ -70,7 +75,7 @@ export function toPg(text: string, args: unknown[]): [string, unknown[]] {
   return [out, params]
 }
 
-const root = url ? server(url) : await local(dir)
+const root = url ? server(url) : await memory()
 const current = new AsyncLocalStorage<Conn>()
 const conn = () => current.getStore() ?? root
 
@@ -90,7 +95,7 @@ export const db = {
   end: () => root.end(),
 }
 
-// ponytail: the schema runs on every start (idempotent). Move it to the migration step once several instances start at once (Vercel).
+// ponytail: the schema runs on every start (idempotent). Move it to a deploy step once several instances start at once (Vercel).
 await root.exec(sql('schema.sql'))
 if (!await db.prepare('SELECT 1 FROM users LIMIT 1').get()) await db.tx(() => db.exec(sql('seed.sql')))
 
