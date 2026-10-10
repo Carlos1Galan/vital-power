@@ -123,9 +123,8 @@ label > input:not([type=checkbox], [type=radio]), label > select, label > textar
 label > input:not([type=checkbox], [type=radio]), label > select { height: 3rem; }
 .persona-window { display: block; overflow: hidden; white-space: nowrap; }
 .persona-name { display: inline-block; font-weight: 600; }
-/* Slides twice when the name appears, then rests. Pointing at it or focusing it with the keyboard slides it again for as long as you stay. */
-.persona-name.sliding { animation: persona-slide var(--slide-time) linear 2; }
-.persona-select:hover .persona-name.sliding, .persona-select:focus-within .persona-name.sliding { animation-iteration-count: infinite; }
+/* A name wider than the box keeps sliding to its end and back, resting at each side, so all of it can be read. */
+.persona-name.sliding { animation: persona-slide var(--slide-time) linear infinite; }
 
 button, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; padding: 0.55rem 1.3rem; border: 2px solid var(--action); border-radius: var(--radius-small);
   background: var(--action); color: var(--on-action); font-weight: 700; text-decoration: none; cursor: pointer; transition: transform var(--fast) var(--ease-out), background var(--fast), box-shadow var(--fast); }
@@ -351,3 +350,11 @@ button.intake-link { border-color: transparent; text-decoration: underline; text
   button:hover, button:active, .button:hover, .button:active, .brand:hover { transform: none !important; }
   .persona-name { display: block; overflow: hidden; text-overflow: ellipsis; } /* no sliding: the full name is in the tooltip and the list */
 }
+
+/* WhatsApp chat on a case: theirs on the left, ours on the right. */
+.chat-log { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: grid; gap: var(--space-1); }
+.chat-log li { max-width: min(85%, 48ch); padding: var(--space-1); border: 1px solid var(--line); border-radius: 0.75rem; background: var(--surface); }
+.chat-log li.out { justify-self: end; background: var(--action-tint); }
+.chat-log p { margin: 0 0 0.25rem; white-space: pre-wrap; }
+.chat-log small { display: block; }
+.chat-error { color: var(--warn); }

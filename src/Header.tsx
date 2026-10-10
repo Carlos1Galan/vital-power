@@ -17,7 +17,7 @@ const personaLabel = (p: Persona, t: Translator, s: ServerText) => {
   return p.orgStatus === 'pending' ? t('header.personaPending', { name }) : name
 }
 // The chosen persona inside the searchable select. When the name is wider than the control it slides to its end
-// and back so all of it can be read (twice, then again on hover or focus; see persona-slide in index.css).
+// and back, over and over, so all of it can be read (see persona-slide in index.css).
 function SlidingValue(props: SingleValueProps<SelectOption, false>) {
   const box = useRef<HTMLSpanElement>(null)
   const [overflow, setOverflow] = useState(0)

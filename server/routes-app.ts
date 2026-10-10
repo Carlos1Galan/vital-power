@@ -9,7 +9,8 @@ import { db, setting } from './db.ts'
 import { callList, claimEvent, feedStatus, knownZones, setEventStatus } from './events.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
 import type { NeedKind } from './priority.ts'
-import { ReplyReading, draftBriefing, extractProfile, readReply } from './ai.ts'
+import { ReplyReading, draftBriefing, extractProfile, readReplyLater } from './ai.ts'
+import { send, waNumber, whatsappOn } from './whatsapp.ts'
 import { readFileSync } from 'node:fs'
 
 const withFeed = <T extends object>(data: T) => ({ ...feedStatus(), ...data })
@@ -100,6 +101,7 @@ const seeded = (() => {
 
 type Checkin = { id: number; message: string; sentAt: string; replyText: string | null; replyAt: string | null; aiParsed: string | null; confirmedAt: string | null }
 type Outcome = { id: number; reached: number; outcome: string; nextAction: string | null; createdAt: string; coordinator: string }
+type Message = { id: number; dir: 'out' | 'in'; body: string; error: string | null; createdAt: string; sentBy: string | null }
 
 // Owned by B: demo login, intake, patients, check-ins, claim, events, briefings, outcomes.
 export const appRoutes = new Hono()
@@ -169,13 +171,8 @@ export const appRoutes = new Hono()
         SELECT e.id FROM outage_events e JOIN patients p ON p.id = e.patient_id WHERE ${OPEN} AND e.mode = :mode AND ${SEES})`)
       .run({ id: c.req.valid('param').id, text: c.req.valid('json').text, uid: u.id, orgId: u.orgId, mode: setting('mode') }).changes
     if (!changed) return c.json(withFeed({ error: 'Aviso no encontrado o ya contestado' }), 404)
-    // The reply is already saved. The AI reading is a convenience for the coordinator and can take seconds,
-    // so it runs after the response: the caregiver never waits on it and its failure loses nothing.
     const { id } = c.req.valid('param')
-    const saved = db.prepare('SELECT message, reply_text AS replyText FROM checkins WHERE id = ?').get(id) as { message: string; replyText: string }
-    void readReply(saved.message, saved.replyText)
-      .then((r) => db.prepare('UPDATE checkins SET ai_parsed = ? WHERE id = ?').run(JSON.stringify(r), id))
-      .catch((e) => console.error('readReply failed', e))
+    readReplyLater(id)
     return c.json(withFeed({ id }))
   })
 
@@ -199,8 +196,12 @@ export const appRoutes = new Hono()
       FROM call_outcomes co JOIN users us ON us.id = co.coordinator_id WHERE co.event_id = ? ORDER BY co.id`).all(ev.id) as Outcome[]
     const briefing = db.prepare(`SELECT id, draft_text AS draftText, approved_text AS approvedText, approved_at AS approvedAt
       FROM briefings WHERE event_id = ? ORDER BY id DESC LIMIT 1`).get(ev.id) as { id: number; draftText: string; approvedText: string | null; approvedAt: string | null } | undefined
+    const messages = db.prepare(`SELECT m.id, m.dir, m.body, m.error, m.created_at AS createdAt, us.name AS sentBy
+      FROM messages m LEFT JOIN users us ON us.id = m.sent_by WHERE m.event_id = ? ORDER BY m.id`).all(ev.id) as Message[]
     return c.json(withFeed({
       event: { ...ev, needs: JSON.parse(ev.needs) as Need[], mine: ev.claimedByOrgId !== null && ev.claimedByOrgId === u.orgId },
+      whatsapp: whatsappOn(),
+      messages,
       checkin: checkin ? { ...checkin, aiParsed: reading(checkin.aiParsed) } : null,
       briefing: briefing ?? null,
       outcomes: outcomes.map((o) => ({ ...o, reached: !!o.reached })),
@@ -233,6 +234,21 @@ export const appRoutes = new Hono()
         .run(ev.id, u.id, b.reached ? 1 : 0, b.outcome, b.nextAction || null).lastInsertRowid)
       return c.json(withFeed({ id }), 201)
     })
+
+  // WhatsApp chat with the patient or caregiver: a coordinator of the organization that claimed the case writes every word.
+  .post('/events/:id/messages', requireRole('coordinator'), small, idParam, valid('json', z.object({ text: z.string().trim().min(1).max(1000) })), async (c) => {
+    const u = currentUser(c)!
+    const ev = eventFor(u, c.req.valid('param').id)
+    if (!ev) return c.json(withFeed({ error: 'Caso no encontrado' }), 404)
+    if (ev.claimedByOrgId === null || ev.claimedByOrgId !== u.orgId) return c.json(withFeed({ error: NOT_CLAIMED }), 403)
+    if (ev.status !== 'possible' && ev.status !== 'confirmed') return c.json(withFeed({ error: 'El caso ya está cerrado' }), 409)
+    if (!whatsappOn()) return c.json(withFeed({ error: 'WhatsApp no está configurado' }), 503)
+    const phone = waNumber(ev.phone)
+    if (!phone) return c.json(withFeed({ error: 'El paciente no tiene teléfono para WhatsApp' }), 409)
+    const error = await send({ eventId: ev.id, phone, body: c.req.valid('json').text, sentBy: u.id })
+    if (error) return c.json(withFeed({ error: `WhatsApp no aceptó el mensaje: ${error}` }), 502)
+    return c.json(withFeed({ eventId: ev.id }), 201)
+  })
 
   // Intake: the AI drafts a profile from what the caregiver said. Nothing becomes a patient until POST /patients.
   .get('/zones/:municipality', requireRole('caregiver'), valid('param', z.object({ municipality: z.enum(MUNICIPALITIES) })), (c) =>
@@ -308,7 +324,7 @@ export const appRoutes = new Hono()
   // Recorded LUMA readings are never touched: the replay depends on them.
   .post('/demo/reset', requireRole('admin'), (c) => {
     tx(() => {
-      db.exec(`DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM intakes;
+      db.exec(`DELETE FROM messages; DELETE FROM briefings; DELETE FROM call_outcomes; DELETE FROM intakes;
         DELETE FROM checkins WHERE event_id IN (SELECT id FROM outage_events WHERE mode = 'replay' OR patient_id > ${seeded.patients});
         DELETE FROM outage_events WHERE mode = 'replay' OR patient_id > ${seeded.patients};
         DELETE FROM patient_needs WHERE patient_id > ${seeded.patients};

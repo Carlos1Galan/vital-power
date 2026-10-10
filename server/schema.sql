@@ -125,6 +125,21 @@ CREATE TABLE IF NOT EXISTS call_outcomes (
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- WhatsApp chat of a case (server/whatsapp.ts). 'out' rows are written before sending, so a send is never repeated;
+-- error holds a failed send or delivery. wa_id is Twilio's MessageSid: it dedupes webhook retries and maps quoted replies.
+CREATE TABLE IF NOT EXISTS messages (
+  id         INTEGER PRIMARY KEY,
+  event_id   INTEGER NOT NULL REFERENCES outage_events(id),
+  dir        TEXT NOT NULL CHECK (dir IN ('out','in')),
+  phone      TEXT NOT NULL, -- digits with country code
+  body       TEXT NOT NULL,
+  wa_id      TEXT UNIQUE,
+  error      TEXT,
+  sent_by    INTEGER REFERENCES users(id), -- NULL = automatic (check-in, receipt)
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS messages_phone ON messages(phone, dir);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

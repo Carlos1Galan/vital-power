@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import { MUNICIPALITIES } from './municipalities.ts'
+import { db } from './db.ts'
 
 // The three AI calls. Every output is validated with zod here and then passes a human step before use:
 // the caregiver confirms the profile, the coordinator reads the original reply next to the reading and
@@ -66,6 +67,15 @@ export async function readReply(question: string, reply: string) {
 - summary: una oración corta en español con lo que dijo, sin añadir nada.
 - summaryEn: la misma oración en inglés.
 Un coordinador humano verá el texto original junto a tu lectura y decide. ${DATA_ONLY}`, `Pregunta enviada: ${question}\n<respuesta>\n${reply}\n</respuesta>`))
+}
+
+// A check-in reply is already saved (web or WhatsApp). The reading is a convenience for the coordinator and can take
+// seconds, so it runs in the background: the sender never waits on it and its failure loses nothing.
+export function readReplyLater(checkinId: number) {
+  const saved = db.prepare('SELECT message, reply_text AS replyText FROM checkins WHERE id = ?').get(checkinId) as { message: string; replyText: string }
+  void readReply(saved.message, saved.replyText)
+    .then((r) => db.prepare('UPDATE checkins SET ai_parsed = ? WHERE id = ?').run(JSON.stringify(r), checkinId))
+    .catch((e) => console.error('readReply failed', e))
 }
 
 export type BriefingFacts = {

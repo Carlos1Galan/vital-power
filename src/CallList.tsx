@@ -116,6 +116,12 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
 
   // The automatic reading is stored a few seconds after the reply; look again while it is still on its way.
   const awaitingReading = !!detail?.checkin?.replyAt && !detail.checkin.aiParsed && Date.now() - Date.parse(detail.checkin.replyAt) < 60_000
+  // New WhatsApp messages arrive on their own: look again while the case is open.
+  useEffect(() => {
+    if (!detail?.whatsapp) return
+    const timer = setInterval(load, 10_000)
+    return () => clearInterval(timer)
+  }, [detail?.whatsapp, load])
   useEffect(() => {
     if (!awaitingReading) return
     const timer = setTimeout(load, 3000)
@@ -172,8 +178,36 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
           </form>
         : <p className="muted">{event.claimedBy ? t('case.onlyOrg', { org: s(event.claimedBy) }) : t('case.claimFirst')}</p>}
     </section>
+    {detail.whatsapp && <Chat id={id} mine={event.mine} messages={detail.messages} busy={busy} act={act} reload={load} />}
     <BriefingSection event={event} initial={detail.briefing} reload={load} />
   </div>
+}
+
+// WhatsApp with the patient or caregiver. Only the organization that took the case writes; every word is the coordinator's.
+function Chat({ id, mine, messages, busy, act, reload }: { id: number; mine: boolean; messages: Detail['messages']; busy: boolean
+  act: (request: () => Promise<Response>) => Promise<boolean>; reload: () => Promise<void> }) {
+  const t = useT()
+  const s = useServerText()
+  const [text, setText] = useState('')
+  return <section>
+    <h3>{t('chat.title')}</h3>
+    {messages.length ? <ol className="chat-log">{messages.map((m) => <li key={m.id} className={m.dir}>
+      <p>{m.body}</p>
+      <small className="muted">{m.dir === 'in' ? t('chat.them') : m.sentBy ? s(m.sentBy) : t('chat.auto')} · {ago(m.createdAt, t)}</small>
+      {m.error && <small role="alert" className="chat-error">{t('chat.failed', { error: m.error })}</small>}
+    </li>)}</ol> : <p className="muted">{t('chat.empty')}</p>}
+    {mine
+      ? <form className="outcome-form" onSubmit={async (ev) => {
+          ev.preventDefault()
+          const sent = await act(() => api.events[':id'].messages.$post({ param: { id: String(id) }, json: { text } }))
+          if (sent) setText('') // keep what the coordinator typed if it did not go out
+          await reload()
+        }}>
+          <label>{t('chat.write')}<textarea required maxLength={1000} rows={2} value={text} onChange={(ev) => setText(ev.target.value)} /></label>
+          <button disabled={busy || !text.trim()}>{t('chat.send')}</button>
+        </form>
+      : <p className="muted">{t('chat.claimFirst')}</p>}
+  </section>
 }
 
 function BriefingSection({ event, initial, reload }: { event: Detail['event']; initial: Detail['briefing']; reload: () => Promise<void> }) {
