@@ -4,7 +4,7 @@
 
 ## Why this split
 
-Two people build VitalPower Relay in 48 hours. If nobody owns specific files, each person ends up building a slice of everything (two schemas, two route files, two pollers), and the team ships two half-projects instead of one demo. This plan turns the spec's split (`Docs/vitalpower-relay.md`, "Build plan for 2 people") into file-level ownership on one repo, one package, one SQLite database and one typed API.
+Two people build VitalPower Relay in 48 hours. If nobody owns specific files, each person ends up building a slice of everything (two schemas, two route files, two pollers), and the team ships two half-projects instead of one demo. This plan turns the spec's split (`Docs/vitalpower-relay.md`, "Build plan for 2 people") into file-level ownership on one repo, one package, one Postgres database (Supabase) and one typed API.
 
 | Plan | Assignee | Owns |
 |---|---|---|
@@ -13,7 +13,7 @@ Two people build VitalPower Relay in 48 hours. If nobody owns specific files, ea
 
 ## Shared contract (identical in `Docs/build-plan.md`, `Docs/plan-data.md` and `Docs/plan-ui.md`)
 
-This is one project. There is one `package.json`, one `server/schema.sql`, one `data/vitalpower.db`, one `AppType` and one `src/api.ts`. Nobody creates a second server, database or API client.
+This is one project. There is one `package.json`, one `server/schema.sql`, one Supabase Postgres database (`DATABASE_URL`), one `AppType` and one `src/api.ts`. Nobody creates a second server, database or API client.
 
 ### Who uses the system
 
