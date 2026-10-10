@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS patients (
   consent_version TEXT NOT NULL,
   confirmed_at    TEXT
 );
+-- Exact location, only when the caregiver chose to share it (browser geolocation). NULL = municipality + zone only.
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;
 CREATE UNIQUE INDEX IF NOT EXISTS one_self_patient ON patients(caregiver_id) WHERE is_self = 1;
 CREATE INDEX IF NOT EXISTS patients_place ON patients(municipality, zone);
 

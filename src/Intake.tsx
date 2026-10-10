@@ -52,6 +52,9 @@ export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf:
   const [zones, setZones] = useState<Zones>([])
   const [needs, setNeeds] = useState<NeedRow[]>([emptyNeed()])
   const [consent, setConsent] = useState(false)
+  const [location, setLocation] = useState<{ lat: number; lng: number; accuracyM: number } | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [locationError, setLocationError] = useState('')
   const [busy, setBusy] = useState(false)
   const [zonesBusy, setZonesBusy] = useState(false)
   const [error, setError] = useState('')
@@ -140,6 +143,17 @@ export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf:
       setListening(true)
     } catch { setListening(false); setVoiceError(t('intake.voiceError')) }
   }
+  // Exact location is opt-in: the browser asks for permission only after the person presses the button.
+  const locate = () => {
+    setLocationError('')
+    if (!navigator.geolocation) return setLocationError(t('intake.locationError'))
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => { setLocation({ lat: coords.latitude, lng: coords.longitude, accuracyM: Math.round(coords.accuracy) }); setLocating(false) },
+      (err) => { setLocationError(t(err.code === err.PERMISSION_DENIED ? 'intake.locationDenied' : 'intake.locationError')); setLocating(false) },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+    )
+  }
   const clearForm = () => {
     initialZones.current = null
     setIntakeId(undefined)
@@ -152,6 +166,8 @@ export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf:
     setZoneError('')
     setNeeds([emptyNeed()])
     setConsent(false)
+    setLocation(null)
+    setLocationError('')
   }
   const extract = async () => {
     stop()
@@ -191,7 +207,7 @@ export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf:
     setError('')
     try {
       const res = await api.patients.$post({ json: { intakeId, isSelf, consent: true, profile: {
-        displayName: name.trim(), phone: phone.trim(), municipality, zone: zone || null, needs: completeNeeds,
+        displayName: name.trim(), phone: phone.trim(), municipality, zone: zone || null, needs: completeNeeds, location,
       } } })
       if (!res.ok) setError(await errorText(res))
       else await onSaved()
@@ -256,6 +272,10 @@ export default function Intake({ hasSelf, start, onCancel, onSaved }: { hasSelf:
       /></label>
       {zonesBusy ? <p className="muted" aria-live="polite">{t('intake.loadingZones')}</p> : municipality && !zones.length && <p className="muted">{t('intake.noZones')}</p>}
       {zoneError && <p role="alert" className="connection-error">{s(zoneError)}</p>}
+      {location
+        ? <p className="muted">{t('intake.locationSaved', { meters: location.accuracyM })} <button type="button" className="quiet" onClick={() => setLocation(null)}>{t('intake.remove')}</button></p>
+        : <button type="button" className="quiet" disabled={locating} onClick={locate}>{locating ? t('intake.locating') : t('intake.shareLocation')}</button>}
+      {locationError && <p role="alert" className="connection-error">{locationError}</p>}
       <h2 className="question">{t('intake.needs')}</h2>
       {needs.map((n, i) => <div className="need-row" key={i}>
         <label htmlFor={`intake-need-${i}`}>{t('intake.needNumber', { number: i + 1 })}<Select<SelectOption, false>

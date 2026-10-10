@@ -29,24 +29,29 @@ const publicUrl = (path: string) => env.PUBLIC_URL ? `${env.PUBLIC_URL.replace(/
 
 type Outgoing = { eventId: number; phone: string; body: string; sentBy?: number | null; template?: string }
 
-// The row is written before the network call, so an overlapping run never sends it twice. Returns the error, or null.
-export async function send({ eventId, phone, body, sentBy = null, template }: Outgoing) {
-  const { id } = await db.prepare("INSERT INTO messages (event_id, dir, phone, body, sent_by) VALUES (?, 'out', ?, ?, ?) RETURNING id").get(eventId, phone, body, sentBy) as { id: number }
+// One message through Twilio's API; returns its MessageSid or throws Twilio's reason.
+export async function twilioSend(phone: string, body: string, template?: string) {
   const form = new URLSearchParams({ From: env.TWILIO_WHATSAPP_FROM || SANDBOX, To: `whatsapp:+${phone}` })
   if (template) form.set('ContentSid', template)
   else form.set('Body', body)
   const status = publicUrl('status')
   if (status) form.set('StatusCallback', status)
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}` },
+    body: form,
+    signal: AbortSignal.timeout(15_000),
+  })
+  const json = await res.json() as { sid?: string; message?: string }
+  if (!res.ok || !json.sid) throw new Error(json.message ?? `HTTP ${res.status}`)
+  return json.sid
+}
+
+// The row is written before the network call, so an overlapping run never sends it twice. Returns the error, or null.
+export async function send({ eventId, phone, body, sentBy = null, template }: Outgoing) {
+  const { id } = await db.prepare("INSERT INTO messages (event_id, dir, phone, body, sent_by) VALUES (?, 'out', ?, ?, ?) RETURNING id").get(eventId, phone, body, sentBy) as { id: number }
   try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`, {
-      method: 'POST',
-      headers: { Authorization: `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}` },
-      body: form,
-      signal: AbortSignal.timeout(15_000),
-    })
-    const json = await res.json() as { sid?: string; message?: string }
-    if (!res.ok || !json.sid) throw new Error(json.message ?? `HTTP ${res.status}`)
-    await db.prepare('UPDATE messages SET wa_id = ? WHERE id = ?').run(json.sid, id)
+    await db.prepare('UPDATE messages SET wa_id = ? WHERE id = ?').run(await twilioSend(phone, body, template), id)
     return null
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)

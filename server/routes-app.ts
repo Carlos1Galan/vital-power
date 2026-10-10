@@ -36,12 +36,14 @@ type EventRow = {
   id: number; status: 'possible' | 'confirmed' | 'restored' | 'false_alarm'; openedAt: string; closedAt: string | null
   claimedByOrgId: number | null; claimedBy: string | null; claimedAt: string | null
   patientName: string; phone: string | null; municipality: string; zone: string | null; needs: string
+  lat: number | null; lng: number | null; locationAccuracyM: number | null
 }
 // An event of the current mode that this coordinator (or admin) may see; undefined otherwise.
 const eventFor = async (u: CurrentUser, id: number) =>
   await db.prepare(`SELECT e.id, e.status, e.opened_at AS openedAt, e.closed_at AS closedAt,
       e.claimed_by_org_id AS claimedByOrgId, o.name AS claimedBy, e.claimed_at AS claimedAt,
-      p.display_name AS patientName, p.phone, p.municipality, p.zone, ${NEEDS} AS needs
+      p.display_name AS patientName, p.phone, p.municipality, p.zone, ${NEEDS} AS needs,
+      p.lat, p.lng, p.location_accuracy_m AS locationAccuracyM
     FROM outage_events e JOIN patients p ON p.id = e.patient_id LEFT JOIN organizations o ON o.id = e.claimed_by_org_id
     WHERE e.id = :id AND e.mode = :mode AND ${COVERS}`).get({ id, ...await scope(u) }) as EventRow | undefined
 
@@ -62,6 +64,8 @@ const PatientBody = z.object({
     municipality: z.enum(MUNICIPALITIES),
     zone: z.string().trim().min(1).max(120).nullable(),
     needs: z.array(z.object({ kind: z.enum(['oxygen', 'cpap', 'ventilator', 'dialysis', 'insulin', 'other']), batteryHours: z.number().min(0).max(240).nullable() })).min(1).max(6),
+    // Only when the caregiver pressed "share my exact location" and the browser allowed it. Bounds: Puerto Rico, Vieques, Culebra and Mona.
+    location: z.object({ lat: z.number().min(17.8).max(18.6), lng: z.number().min(-68).max(-65.2), accuracyM: z.number().min(0).max(100_000) }).nullable().default(null),
   }),
 })
 const reading = (json: string | null) => {
@@ -270,9 +274,10 @@ export const appRoutes = new Hono()
     if (isSelf && await db.prepare('SELECT 1 FROM patients WHERE caregiver_id = ? AND is_self = 1').get(u.id)) return c.json(await withFeed({ error: 'Usted ya tiene su propio registro' }), 409)
     const id = await db.tx(async () => {
       // facility_id comes from the current user, never from the request body.
-      const { id: patientId } = await db.prepare(`INSERT INTO patients (caregiver_id, facility_id, is_self, display_name, phone, municipality, zone, consent_at, consent_version, confirmed_at)
-        VALUES (:uid, (SELECT id FROM organizations WHERE id = :orgId AND kind = 'facility'), :isSelf, :name, :phone, :municipality, :zone, ${NOW}, 'v1', ${NOW}) RETURNING id`)
-        .get({ uid: u.id, orgId: u.orgId, isSelf: isSelf ? 1 : 0, name: p.displayName, phone: p.phone || null, municipality: p.municipality, zone: p.zone }) as { id: number }
+      const { id: patientId } = await db.prepare(`INSERT INTO patients (caregiver_id, facility_id, is_self, display_name, phone, municipality, zone, lat, lng, location_accuracy_m, consent_at, consent_version, confirmed_at)
+        VALUES (:uid, (SELECT id FROM organizations WHERE id = :orgId AND kind = 'facility'), :isSelf, :name, :phone, :municipality, :zone, :lat, :lng, :accuracy, ${NOW}, 'v1', ${NOW}) RETURNING id`)
+        .get({ uid: u.id, orgId: u.orgId, isSelf: isSelf ? 1 : 0, name: p.displayName, phone: p.phone || null, municipality: p.municipality, zone: p.zone,
+          lat: p.location?.lat ?? null, lng: p.location?.lng ?? null, accuracy: p.location?.accuracyM ?? null }) as { id: number }
       const need = db.prepare('INSERT INTO patient_needs (patient_id, kind, battery_hours) VALUES (?, ?, ?)')
       for (const n of p.needs) await need.run(patientId, n.kind, n.batteryHours)
       if (intakeId) await db.prepare("UPDATE intakes SET status = 'confirmed', patient_id = ? WHERE id = ? AND caregiver_id = ? AND status = 'draft'").run(patientId, intakeId, u.id)

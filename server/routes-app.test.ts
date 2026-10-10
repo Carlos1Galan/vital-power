@@ -199,6 +199,13 @@ test('a new caregiver signs up with a name, is signed in, and can register a pat
   assert.deepEqual((await call('GET', '/patients/mine', undefined, cookie)).json.patients.map((p: any) => [p.id, p.isSelf]), [[saved.json.id, true]])
   assert.equal((await call('GET', '/demo/me', undefined, cookie)).json.user.personaType, 'self-patient')
 
+  // Exact location is optional and only stored inside Puerto Rico's bounds.
+  const located = { isSelf: false, consent: true, profile: { displayName: 'Tío', phone: '', municipality: 'CAGUAS', zone: null, needs: [{ kind: 'oxygen', batteryHours: null }], location: { lat: 18.2341, lng: -66.0485, accuracyM: 12 } } }
+  const withLocation = await call('POST', '/patients', located, cookie)
+  assert.equal(withLocation.status, 201)
+  assert.deepEqual(await db.prepare('SELECT lat, lng, location_accuracy_m AS accuracy FROM patients WHERE id = ?').get(withLocation.json.id), { lat: 18.2341, lng: -66.0485, accuracy: 12 })
+  assert.equal((await call('POST', '/patients', { ...located, profile: { ...located.profile, location: { lat: 40.7, lng: -74, accuracyM: 5 } } }, cookie)).status, 400)
+
   for (const name of ['', 'x', 'y'.repeat(81)]) assert.equal((await call('POST', '/demo/caregivers', { name })).status, 400)
 
   // The rehearsal reset removes the new persona and their patient; their cookie then means nobody.

@@ -158,6 +158,8 @@ function EventDetail({ id, user, busy, act }: { id: number; user: Persona; busy:
     <section>
       <h3>{t('case.call')}</h3>
       <p>{t('case.phone')} <strong>{event.phone ?? t('case.noPhone')}</strong></p>
+      {event.lat !== null && event.lng !== null && <p>{t('case.location')} <a href={`https://www.google.com/maps/search/?api=1&query=${event.lat},${event.lng}`} target="_blank" rel="noreferrer">
+        {event.lat.toFixed(5)}, {event.lng.toFixed(5)}</a> <span className="muted">{t('case.locationAccuracy', { meters: Math.round(event.locationAccuracyM ?? 0) })}</span></p>}
       {outcomes.map((o) => <p key={o.id} className="outcome">
         <strong>{o.reached ? t('case.reached') : t('case.notReached')}</strong> · {o.outcome}{o.nextAction ? t('case.nextStep', { action: o.nextAction }) : ''}
         <span className="muted"> ({s(o.coordinator)}, {ago(o.createdAt, t)})</span>

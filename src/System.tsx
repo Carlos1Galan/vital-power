@@ -25,6 +25,7 @@ export default function System() {
   const [fromId, setFromId] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sentTo, setSentTo] = useState('')
 
   const load = useCallback(async () => {
     const [r, o, g] = await Promise.all([api.admin.readings.$get(), api.admin.organizations.$get(), api.admin['coverage-gaps'].$get()])
@@ -49,6 +50,7 @@ export default function System() {
         setError(typeof error === 'string' ? error : t('common.errorStatus', { status: res.status }))
       }
       await load()
+      return res.ok ? res : null
     } finally {
       setBusy(false)
     }
@@ -64,6 +66,16 @@ export default function System() {
         {t('header.lastReading')} {time(readings?.lastReadingAt ?? null)}{' '}
         {readings?.stale && <strong className="badge stale">{t('system.stale')}</strong>}
       </header>
+
+      <h2>{t('system.whatsapp')}</h2>
+      <p>
+        <button disabled={busy} onClick={async () => {
+          setSentTo('')
+          const res = await act(() => api.admin['whatsapp-test'].$post())
+          if (res) setSentTo(((await res.json()) as { to: string }).to)
+        }}>{t('system.whatsappTest')}</button>{' '}
+        {sentTo && <span role="status">{t('system.whatsappSent', { digits: sentTo })}</span>}
+      </p>
 
       <h2>{t('system.readings')}</h2>
       <p>
