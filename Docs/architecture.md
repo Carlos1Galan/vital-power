@@ -76,7 +76,7 @@ src/
 | `patient_needs` | patient_id→patients, kind CHECK IN ('oxygen','cpap','ventilator','dialysis','insulin','other'), battery_hours NULL | One patient can have several devices; rules read the min battery |
 | `intakes` | id, caregiver_id, patient_id NULL, transcript, ai_json, status CHECK IN ('draft','confirmed','rejected') | Audit trail: AI draft vs. what the human confirmed |
 | `zones` | municipality, zone, PK(both) | Catalogue for address matching, grown from readings + seed |
-| `luma_readings` | id, fetched_at, source CHECK IN ('live','replay'), endpoint CHECK IN ('regions','towns'), request_body, http_status, payload JSON, luma_timestamp | Store every reading raw; matching uses `json_each(payload)` |
+| `luma_readings` | id, fetched_at, source CHECK IN ('live','replay'), endpoint CHECK IN ('regions','towns'), request_body, http_status, payload JSON, luma_timestamp | Store every reading raw; matching uses `json_each(payload::json)` |
 | `outage_events` | id, patient_id, opened_reading_id, closed_reading_id NULL, status CHECK IN ('possible','confirmed','restored','false_alarm'), opened_at, closed_at, claimed_by_org_id NULL, claimed_by NULL, claimed_at NULL | One incident per patient per outage; the first responder organization to claim it makes the call |
 | `checkins` | id, event_id, sent_at, message, reply_text, reply_at, ai_parsed JSON, confirmed_by NULL, confirmed_at NULL | Original reply text kept next to the AI reading of it |
 | `briefings` | id, event_id, draft_text, approved_text NULL, approved_by NULL, approved_at NULL | Coordinator approves before use |

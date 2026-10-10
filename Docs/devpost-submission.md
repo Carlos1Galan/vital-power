@@ -7,7 +7,7 @@ Draft of 2026-10-09. Paste the sections into the matching Devpost fields.
 **Tagline (under 200 characters):**
 Know who to call first when the power goes out. A call list for the people in Puerto Rico who depend on electricity for medical equipment.
 
-**Built with (tags):** react, typescript, vite, hono, node.js, sqlite, zod, anthropic-claude, web-speech-api
+**Built with (tags):** react, typescript, vite, hono, node.js, postgresql, supabase, zod, anthropic-claude, web-speech-api
 
 ## Before submitting
 
@@ -52,10 +52,10 @@ AI (Claude) does three smaller jobs: it fills the registration form from what th
 ## How we built it
 
 - **Frontend:** React and TypeScript with Vite. No UI framework; our own stylesheet with design tokens for both themes.
-- **Backend:** Hono on Node, with SQLite through Node's built-in driver. The frontend calls the API through a typed client, so a changed route breaks the build instead of the demo.
+- **Backend:** Hono on Node, with Postgres on Supabase: plain SQL, no ORM, and the tests run on an in-memory Postgres. The frontend calls the API through a typed client, so a changed route breaks the build instead of the demo.
 - **Outage data:** LUMA's public outage feed, polled every three minutes. Every reading is stored, including failures, which lets us replay a real recorded outage for the demo.
 - **AI:** the Anthropic API with structured outputs, validated again on our side.
-- **Safety:** who can see what is enforced in the database queries, not in the screens. 79 automated tests cover the ranking rules, the visibility rules, the claim race between organizations, and the AI steps.
+- **Safety:** who can see what is enforced in the database queries, not in the screens. 85 automated tests cover the ranking rules, the visibility rules, the claim race between organizations, and the AI steps.
 - **Browser features:** speech recognition for voice registration, system notifications for alerts.
 
 ## Challenges we ran into

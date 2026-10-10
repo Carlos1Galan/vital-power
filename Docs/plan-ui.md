@@ -6,7 +6,7 @@ B owns everything a person touches: the three areas, the demo persona login, the
 
 ## Shared contract (identical in `Docs/build-plan.md`, `Docs/plan-data.md` and `Docs/plan-ui.md`)
 
-This is one project. There is one `package.json`, one `server/schema.sql`, one `data/vitalpower.db`, one `AppType` and one `src/api.ts`. Nobody creates a second server, database or API client.
+This is one project. There is one `package.json`, one `server/schema.sql`, one Supabase Postgres database (`DATABASE_URL`), one `AppType` and one `src/api.ts`. Nobody creates a second server, database or API client.
 
 ### Who uses the system
 

@@ -93,7 +93,7 @@ We cannot cause a real outage on stage, so the demo uses **a recorded real LUMA 
 |---|---|---|
 | **Owns** | LUMA polling, storing readings, zone matching, priority rules, replay mode, failure tests | Interface, AI extraction, check-in flow, approval and briefing, demo video |
 
-- **Stack:** Node, React and SQLite.
+- **Stack:** Node, React and Postgres (Supabase).
 - **Friday morning:** the full path works end to end with one patient (reading arrives, patient is flagged, call list updates).
 - **Friday evening:** stop adding features. Saturday is for the demo and the video.
 
