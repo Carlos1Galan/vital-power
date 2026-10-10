@@ -71,3 +71,15 @@ test('only the claiming organization writes, and a failed delivery is kept on th
   await webhook('status', { MessageSid: `SM${sent.length}`, MessageStatus: 'undelivered', ErrorCode: '63016' })
   assert.deepEqual({ ...(await messagesOf(1)).at(-1) }, { dir: 'out', body: '¿Necesita oxígeno?', error: 'Twilio error 63016' })
 })
+
+test('the admin test button messages only the demo phone, with a cooldown', async () => {
+  const press = (user: number) => app.request('/api/admin/whatsapp-test', { method: 'POST', headers: { Cookie: `vp_user=${user}` } })
+  assert.equal((await press(2)).status, 403) // a coordinator
+  sent = []
+  const res = await press(1)
+  assert.equal(res.status, 200)
+  assert.equal((await res.json() as { to: string }).to, '1111')
+  assert.deepEqual([sent.length, sent[0].To], [1, `whatsapp:+${DEMO}`])
+  assert.equal((await press(1)).status, 429) // pressed again right away
+  assert.equal(sent.length, 1)
+})

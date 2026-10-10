@@ -7,6 +7,7 @@ import { MUNICIPALITIES } from './municipalities.ts'
 import { callList, coverageGaps, feedStatus } from './events.ts'
 import { currentUser, requireRole } from './auth.ts'
 import { pollOnce, replayStep, setMode } from './luma.ts'
+import { twilioSend, waNumber, whatsappOn } from './whatsapp.ts'
 
 // Every response carries { lastReadingAt, stale, mode }.
 const withFeed = async <T extends object>(data: T) => ({ ...await feedStatus(), ...data })
@@ -28,6 +29,8 @@ const OrgBody = z.object({
 })
 
 const admin = requireRole('admin')
+// ponytail: one global cooldown for the WhatsApp test button; enough for a single presenter.
+let lastWhatsappTest = 0
 
 // Owned by A: public status, organization registration, call list, admin.
 export const dataRoutes = new Hono()
@@ -85,6 +88,22 @@ export const dataRoutes = new Hono()
       WHERE id = ? AND kind = 'responder'`).run(status, id)
     if (!changes) return c.json(await withFeed({ error: 'Organization not found' }), 404)
     return c.json(await withFeed({ id, status }))
+  })
+
+  // Demo check of the Twilio setup. Only ever to WHATSAPP_DEMO_TO: anyone can become admin in the demo, so never a number from the body.
+  .post('/admin/whatsapp-test', admin, async (c) => {
+    if (!whatsappOn()) return c.json(await withFeed({ error: 'WhatsApp no está configurado' }), 503)
+    const phone = waNumber(null)
+    if (!phone) return c.json(await withFeed({ error: 'Falta WHATSAPP_DEMO_TO' }), 409)
+    if (Date.now() - lastWhatsappTest < 10_000) return c.json(await withFeed({ error: 'Espere unos segundos antes de otra prueba' }), 429)
+    lastWhatsappTest = Date.now()
+    const time = new Date().toLocaleTimeString('es-PR', { timeZone: 'America/Puerto_Rico' })
+    try {
+      const sid = await twilioSend(phone, `VitalPower · mensaje de prueba (${time})`)
+      return c.json(await withFeed({ sid, to: phone.slice(-4) }))
+    } catch (e) {
+      return c.json(await withFeed({ error: `WhatsApp no aceptó el mensaje: ${e instanceof Error ? e.message : e}` }), 502)
+    }
   })
 
   .get('/admin/coverage-gaps', admin, async (c) => c.json(await withFeed({ patients: await coverageGaps() })))
