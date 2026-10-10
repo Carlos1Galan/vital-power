@@ -4,7 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { db, setting } from './db.ts'
 import { MUNICIPALITIES } from './municipalities.ts'
-import { callList, coverageGaps, feedStatus } from './events.ts'
+import { CHECKIN_MESSAGE, callList, coverageGaps, feedStatus } from './events.ts'
 import { currentUser, requireRole } from './auth.ts'
 import { pollOnce, replayStep, setMode } from './luma.ts'
 import { twilioSend, waNumber, whatsappOn } from './whatsapp.ts'
@@ -104,6 +104,28 @@ export const dataRoutes = new Hono()
     } catch (e) {
       return c.json(await withFeed({ error: `WhatsApp no aceptó el mensaje: ${e instanceof Error ? e.message : e}` }), 502)
     }
+  })
+
+  // Demo: an outage reaches a seed patient's zone, without waiting for LUMA. Opens the same `possible` event and
+  // check-in the feed would, so the WhatsApp sweep (5 s), the /app card, the reply and the call list all run unchanged.
+  // to: 'patient' = the self-registered patient answers; 'caregiver' = a family caregiver answers for their patient.
+  // ponytail: in live mode the next towns poll restores the case if LUMA does not list that zone; run it in replay for a steady demo.
+  .post('/admin/simulate-checkin', admin, small, valid('json', z.object({ to: z.enum(['patient', 'caregiver']) })), async (c) => {
+    const mode = await setting('mode')
+    const reading = await db.prepare('SELECT max(id) AS id FROM luma_readings').get() as { id: number | null }
+    if (!reading.id) return c.json(await withFeed({ error: 'Todavía no hay lecturas de LUMA' }), 409)
+    const p = await db.prepare(`SELECT p.id, p.display_name AS patient, u.name AS answeredBy FROM patients p JOIN users u ON u.id = p.caregiver_id
+      WHERE p.is_self = ? AND p.facility_id IS NULL ORDER BY p.id LIMIT 1`).get(c.req.valid('json').to === 'patient' ? 1 : 0) as { id: number; patient: string; answeredBy: string } | undefined
+    if (!p) return c.json(await withFeed({ error: 'No hay paciente para esta prueba' }), 404)
+    const eventId = await db.tx(async () => {
+      // Pressing it again starts over: the previous simulated or real open case of this patient closes as a false alarm.
+      await db.prepare(`UPDATE outage_events SET status = 'false_alarm', closed_at = iso(now())
+        WHERE patient_id = ? AND mode = ? AND status IN ('possible','confirmed')`).run(p.id, mode)
+      const { id } = await db.prepare('INSERT INTO outage_events (patient_id, opened_reading_id, mode) VALUES (?, ?, ?) RETURNING id').get(p.id, reading.id, mode) as { id: number }
+      await db.prepare('INSERT INTO checkins (event_id, message) VALUES (?, ?)').run(id, CHECKIN_MESSAGE)
+      return id
+    })
+    return c.json(await withFeed({ eventId, patient: p.patient, answeredBy: p.answeredBy, whatsapp: whatsappOn() }))
   })
 
   .get('/admin/coverage-gaps', admin, async (c) => c.json(await withFeed({ patients: await coverageGaps() })))

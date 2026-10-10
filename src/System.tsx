@@ -26,6 +26,7 @@ export default function System() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sentTo, setSentTo] = useState('')
+  const [simulated, setSimulated] = useState('')
 
   const load = useCallback(async () => {
     const [r, o, g] = await Promise.all([api.admin.readings.$get(), api.admin.organizations.$get(), api.admin['coverage-gaps'].$get()])
@@ -75,6 +76,17 @@ export default function System() {
           if (res) setSentTo(((await res.json()) as { to: string }).to)
         }}>{t('system.whatsappTest')}</button>{' '}
         {sentTo && <span role="status">{t('system.whatsappSent', { digits: sentTo })}</span>}
+      </p>
+      <p className="muted">{t('system.simulateNote')}</p>
+      <p>
+        {(['patient', 'caregiver'] as const).map((to) => <button key={to} disabled={busy} onClick={async () => {
+          setSimulated('')
+          const res = await act(() => api.admin['simulate-checkin'].$post({ json: { to } }))
+          if (!res) return
+          const r = (await res.json()) as { patient: string; answeredBy: string; whatsapp: boolean }
+          setSimulated(t('system.simulated', { patient: s(r.patient), answeredBy: s(r.answeredBy) }) + (r.whatsapp ? t('system.simulatedWhatsapp') : ''))
+        }}>{t(to === 'patient' ? 'system.simulatePatient' : 'system.simulateCaregiver')}</button>)}{' '}
+        {simulated && <span role="status">{simulated}</span>}
       </p>
 
       <h2>{t('system.readings')}</h2>
